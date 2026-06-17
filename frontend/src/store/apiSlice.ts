@@ -27,7 +27,7 @@ export const apiSlice = createApi({
   reducerPath: 'api',
 
   baseQuery: fetchBaseQuery({
-    baseUrl: 'http://localhost:8090/v1/api',
+    baseUrl: 'https://crm-notification-o416.onrender.com/v1/api',
 
     prepareHeaders: (headers, { getState }) => {
       const token = (getState() as IRootState).auth?.token
