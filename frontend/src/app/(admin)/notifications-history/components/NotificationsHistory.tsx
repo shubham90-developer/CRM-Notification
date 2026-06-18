@@ -6,20 +6,10 @@ import React from 'react'
 import { Badge, Card, CardTitle, Col, Row } from 'react-bootstrap'
 
 import Image from 'next/image'
-
-const data = [
-  {
-    id: 1,
-    itemName: 'Shabu Khichadi',
-    image: product,
-    price: '200',
-    qty: '20kg',
-    status: 'Seen',
-    date: '29 may 2026',
-  },
-]
-
+import { useGetMenuMasterQuery } from '@/store/menuMasterApi'
 const NotificationsHistory = () => {
+  const { data: menuList = [], isLoading } = useGetMenuMasterQuery()
+  if (isLoading) return <div className="text-center p-5">Loading...</div>
   return (
     <>
       <Row>
@@ -50,56 +40,43 @@ const NotificationsHistory = () => {
                 </thead>
 
                 <tbody>
-                  {data.map((item, index) => (
-                    <tr key={item.id}>
-                      {/* Sr No */}
+                  {menuList.map((item, index) => (
+                    <tr key={item._id}>
                       <td>
                         <span className="fw-semibold">{index + 1}</span>
                       </td>
-
-                      {/* Item Name */}
                       <td>
-                        <div className="d-flex align-items-center gap-2">
-                          <div>
-                            <h6 className="mb-0 fw-semibold">{item.itemName}</h6>
-                          </div>
-                        </div>
+                        <h6 className="mb-0 fw-semibold">{item.itemName}</h6>
                       </td>
-
-                      {/* Image */}
                       <td>
-                        <div className="border rounded-3 overflow-hidden d-inline-block">
-                          <Image src={item.image} alt={item.itemName} width={70} height={70} className="img-fluid object-fit-cover" />
-                        </div>
+                        <Image
+                          src={item.image || '/no-img.png'}
+                          alt={item.itemName}
+                          width={70}
+                          height={70}
+                          className="img-fluid object-fit-cover rounded-3"
+                        />
                       </td>
-
-                      {/* Price */}
                       <td>
-                        <span className="fw-bold text-success">₹ {item.price}</span>
+                        <span className="fw-bold text-success">{item.qty}</span>
                       </td>
-
-                      {/* Qty */}
                       <td>
-                        <div className="d-flex align-items-center gap-1">
-                          <IconifyIcon icon="solar:box-bold-duotone" className="fs-18 text-warning" />
-                          <span>{item.qty}</span>
-                        </div>
-                      </td>
-
-                      {/* Status */}
-                      <td>
-                        <Badge bg={item.status === 'Seen' ? 'success' : 'danger'} className="px-3 py-2 rounded-pill">
-                          <IconifyIcon
-                            icon={item.status === 'Seen' ? 'solar:check-circle-bold-duotone' : 'solar:close-circle-bold-duotone'}
-                            className="me-1"
-                          />
+                        <Badge
+                          bg={
+                            item.status === 'ready'
+                              ? 'success'
+                              : item.status === 'prepare'
+                                ? 'warning'
+                                : item.status === 'seen'
+                                  ? 'info'
+                                  : 'secondary'
+                          }
+                          className="px-3 py-2 rounded-pill">
                           {item.status}
                         </Badge>
                       </td>
-
-                      {/* Date */}
                       <td>
-                        <span className="fw-semibold">{item.date}</span>
+                        <span className="fw-semibold">{item.createdAt}</span>
                       </td>
                     </tr>
                   ))}

@@ -13,18 +13,18 @@ const SocketInitializer = () => {
 
     const role = user?.role?.toLowerCase()
 
-    if (role === 'kitchen master' || role === 'kitchen') {
+    if (role === 'kitchen_master') {
       socket.emit('join-kitchen')
       console.log('Joined kitchen-room')
     }
 
-    if (role === 'reception' || role === 'receptionist') {
+    if (role === 'reception_master') {
       socket.emit('join-reception')
       console.log('Joined reception-room')
     }
 
     return () => {
-      socket.disconnect()
+      socket.off('new-menu-notification')
     }
   }, [user])
 

@@ -4,10 +4,11 @@ import { apiSlice } from './apiSlice'
 import { roleApi } from './roleApi'
 import { settingApi } from './settingApi'
 import { menuMasterApi } from './menuMasterApi'
-
+import notificationReducer from './notificationSlice'
 export const store = configureStore({
   reducer: {
     auth: authSlice,
+    notifications: notificationReducer,
     [apiSlice.reducerPath]: apiSlice.reducer,
     [menuMasterApi.reducerPath]: menuMasterApi.reducer,
     [roleApi.reducerPath]: roleApi.reducer,

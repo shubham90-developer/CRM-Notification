@@ -25,15 +25,11 @@ const Notifications = ({ item }: any) => {
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [audioUnlocked, setAudioUnlocked] = useState(false)
 
-  // Join kitchen room and listen for new notifications
   useEffect(() => {
-    socket.emit('join-kitchen')
-
     socket.on('new-menu-notification', (data) => {
       toast.info(`🔔 New Order: ${data.itemName}`)
       router.push(`/notifications?id=${data._id}`)
     })
-
     return () => {
       socket.off('new-menu-notification')
     }

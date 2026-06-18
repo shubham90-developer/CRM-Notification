@@ -255,6 +255,21 @@ export const updateMenuStatus = async (
       return next(new appError("Menu not found", 404));
     }
 
+    if (status === "prepare") {
+      io.to("reception-room").emit("menu-status-updated", {
+        _id: menu._id,
+        itemName: menu.itemName,
+        status: "prepare",
+      });
+    }
+
+    if (status === "ready") {
+      io.to("kitchen-room").emit("menu-status-updated", {
+        _id: menu._id,
+        itemName: menu.itemName,
+        status: "ready",
+      });
+    }
     res.status(200).json({
       success: true,
       statusCode: 200,

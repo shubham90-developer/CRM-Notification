@@ -28,20 +28,21 @@ const Reciptionist = ({ item }: any) => {
 
   // Join reception room and listen for new notifications
   useEffect(() => {
-    socket.emit('join-reception')
+    socket.on('menu-status-updated', (data) => {
+      if (data._id === id) {
+        setStatus(data.status)
+      }
 
-    socket.on('new-menu-notification', (data) => {
       toast.info(`🔔 New Order: ${data.itemName}`)
       router.push(`/reciptionist?id=${data._id}`)
     })
-
     return () => {
       socket.off('new-menu-notification')
+      socket.off('new-menu-notification')
+      socket.off('menu-status-updated')
     }
   }, [])
 
-  // ✅ FIX 2: Play audio only after user unlocks it by tapping the overlay
-  // Browser blocks autoplay without a user gesture — this pattern solves that
   useEffect(() => {
     if (data && audioRef.current && audioUnlocked) {
       audioRef.current.volume = 0.5

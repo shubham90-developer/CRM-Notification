@@ -13,7 +13,6 @@ import { toast } from 'react-toastify'
 import Swal from 'sweetalert2'
 import defaultImg from '../../../../assets/images/no-img.png'
 import { useRouter } from 'next/navigation'
-import Notifications from '../../notifications/Components/Notifications'
 
 const handleDelete = () => {}
 
