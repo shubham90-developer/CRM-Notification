@@ -4,13 +4,14 @@ import AuthProtectionWrapper from '@/components/wrappers/AuthProtectionWrapper'
 import { ChildrenType } from '@/types/component-props'
 import dynamic from 'next/dynamic'
 import React, { Suspense } from 'react'
-
+import SocketInitializer from '@/components/layout/SocketInitializer'
 const VerticalNavigationBar = dynamic(() => import('@/components/layout/VerticalNavigationBar/page'))
 const TopNavigationBar = dynamic(() => import('@/components/layout/TopNavigationBar/page'))
 
 const AdminLayout = ({ children }: ChildrenType) => {
   return (
     <AuthProtectionWrapper>
+      <SocketInitializer />
       <div className="wrapper">
         <Suspense>
           <TopNavigationBar />

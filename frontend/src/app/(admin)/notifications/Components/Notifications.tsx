@@ -23,6 +23,7 @@ const Notifications = ({ item }: any) => {
   const data = menuData || item
   const [status, setStatus] = useState(data?.status || 'pending')
   const [audioEnabled, setAudioEnabled] = useState(true)
+  const [audioUnlocked, setAudioUnlocked] = useState(false)
 
   // Join kitchen room and listen for new notifications
   useEffect(() => {
@@ -37,25 +38,22 @@ const Notifications = ({ item }: any) => {
       socket.off('new-menu-notification')
     }
   }, [])
-  // Play audio when data loads (audio rings until "Seen" is clicked)
+
   useEffect(() => {
-    if (data && audioRef.current) {
+    if (data && audioRef.current && audioUnlocked) {
       audioRef.current.volume = 0.5
-      const playAudio = async () => {
-        try {
-          await audioRef.current?.play()
-        } catch {
-          console.log('Autoplay blocked by browser')
-        }
-      }
-      playAudio()
+      audioRef.current.play().catch(() => console.log('Audio blocked'))
     }
-  }, [data])
+  }, [data, audioUnlocked]) // audioUnlocked added as dependency
 
   // Sync status from API data
   useEffect(() => {
     if (data?.status) setStatus(data.status)
   }, [data?.status])
+
+  const handleUnlockAudio = () => {
+    setAudioUnlocked(true)
+  }
 
   const stopAudio = () => {
     if (audioRef.current) {
@@ -97,6 +95,33 @@ const Notifications = ({ item }: any) => {
     <>
       {data ? (
         <div className="modern-page">
+          {/* ✅ ADD THIS OVERLAY BLOCK */}
+          {!audioUnlocked && (
+            <div
+              onClick={handleUnlockAudio}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                background: 'rgba(0,0,0,0.75)',
+                zIndex: 9999,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexDirection: 'column',
+                color: '#fff',
+                textAlign: 'center',
+              }}>
+              <div style={{ fontSize: '64px' }}>🔔</div>
+              <h3 style={{ marginTop: '16px' }}>New Order Arrived!</h3>
+              <p style={{ opacity: 0.8 }}>Tap anywhere to enable notification sound</p>
+            </div>
+          )}
+          {/* END OF OVERLAY */}
+
           {/* AUDIO — uses URL from settings */}
           <audio ref={audioRef} loop>
             <source src={audioSrc} type="audio/mpeg" />

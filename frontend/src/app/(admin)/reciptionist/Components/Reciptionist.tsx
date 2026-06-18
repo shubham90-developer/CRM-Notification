@@ -9,6 +9,7 @@ import { useGetMenuMasterByIdQuery, useUpdateMenuStatusMutation } from '@/store/
 import { useGetSettingsQuery } from '@/store/settingApi'
 import { toast } from 'react-toastify'
 import socket from '@/lib/socket'
+
 const Reciptionist = ({ item }: any) => {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -23,7 +24,9 @@ const Reciptionist = ({ item }: any) => {
   const data = menuData || item
   const [status, setStatus] = useState(data?.status || 'pending')
   const [audioEnabled, setAudioEnabled] = useState(true)
+  const [audioUnlocked, setAudioUnlocked] = useState(false)
 
+  // Join reception room and listen for new notifications
   useEffect(() => {
     socket.emit('join-reception')
 
@@ -36,25 +39,25 @@ const Reciptionist = ({ item }: any) => {
       socket.off('new-menu-notification')
     }
   }, [])
-  // Play audio when data loads
+
+  // ✅ FIX 2: Play audio only after user unlocks it by tapping the overlay
+  // Browser blocks autoplay without a user gesture — this pattern solves that
   useEffect(() => {
-    if (data && audioRef.current) {
+    if (data && audioRef.current && audioUnlocked) {
       audioRef.current.volume = 0.5
-      const playAudio = async () => {
-        try {
-          await audioRef.current?.play()
-        } catch {
-          console.log('Autoplay blocked')
-        }
-      }
-      playAudio()
+      audioRef.current.play().catch(() => console.log('Audio blocked'))
     }
-  }, [data])
+  }, [data, audioUnlocked])
 
   // Sync status from API data
   useEffect(() => {
     if (data?.status) setStatus(data.status)
   }, [data?.status])
+
+  // ✅ FIX 3: handler to unlock audio on first tap
+  const handleUnlockAudio = () => {
+    setAudioUnlocked(true)
+  }
 
   const stopAudio = () => {
     if (audioRef.current) {
@@ -85,6 +88,35 @@ const Reciptionist = ({ item }: any) => {
     <>
       {data ? (
         <div className="modern-page">
+          {/* ✅ FIX 4: Tap-to-unlock overlay — shown until user taps it.
+              router.push() is programmatic (no user gesture), so browser blocks
+              autoplay. This overlay forces a tap which counts as a user gesture,
+              allowing audio to play after. */}
+          {!audioUnlocked && (
+            <div
+              onClick={handleUnlockAudio}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                background: 'rgba(0,0,0,0.78)',
+                zIndex: 9999,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexDirection: 'column',
+                color: '#fff',
+                textAlign: 'center',
+              }}>
+              <div style={{ fontSize: '64px' }}>🔔</div>
+              <h3 style={{ marginTop: '16px', fontWeight: 700 }}>New Order Arrived!</h3>
+              <p style={{ opacity: 0.8, marginTop: '8px' }}>Tap anywhere to enable notification sound</p>
+            </div>
+          )}
+
           {/* AUDIO */}
           <audio ref={audioRef} loop>
             <source src={audioSrc} type="audio/mpeg" />

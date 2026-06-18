@@ -1,3 +1,4 @@
+'use client'
 import IconifyIcon from '@/components/wrappers/IconifyIcon'
 import SimplebarReactClient from '@/components/wrappers/SimplebarReactClient'
 import { getNotifications } from '@/helpers/data'
