@@ -23,12 +23,16 @@ const Reciptionist = ({ item }: any) => {
   const data = menuData || item
   const [status, setStatus] = useState(data?.status || 'pending')
   const [audioEnabled, setAudioEnabled] = useState(true)
-  const [audioUnlocked, setAudioUnlocked] = useState(false)
+  const [acknowledged, setAcknowledged] = useState(false) // local only — has Reception clicked Seen for this id?
+
+  // Tracks if user manually stopped audio — survives RTK refetch re-renders
   const audioStopped = useRef(false)
-  // Reset audio state on every new notification (id change)
+
+  // Reset audio + acknowledgment state on every new notification (id change)
   useEffect(() => {
-    setAudioUnlocked(false)
+    audioStopped.current = false
     setAudioEnabled(true)
+    setAcknowledged(false)
   }, [id])
 
   // Listen for new notifications — redirect to new id
@@ -50,12 +54,18 @@ const Reciptionist = ({ item }: any) => {
     }
   }, [id])
 
+  // Auto-play audio as soon as data loads — no tap needed
+  // Works because unlockAudio() was called at login (user gesture)
   useEffect(() => {
-    if (data && audioRef.current && audioUnlocked && !audioStopped.current) {
-      audioRef.current.volume = 0.5
-      audioRef.current.play().catch(() => console.log('Audio blocked'))
-    }
-  }, [data, audioUnlocked])
+    if (!data || !audioRef.current || audioStopped.current) return
+    audioRef.current.volume = 0.5
+    audioRef.current.play().catch(() => {
+      // Retry once after 500ms in case audio context hasn't propagated yet
+      setTimeout(() => {
+        audioRef.current?.play().catch(() => console.log('Audio blocked'))
+      }, 500)
+    })
+  }, [data])
 
   // Reload audio element when settings URL loads
   useEffect(() => {
@@ -64,20 +74,11 @@ const Reciptionist = ({ item }: any) => {
     }
   }, [settings?.notificationAudio])
 
-  const [initialLoaded, setInitialLoaded] = useState(false)
+  // status is read-only here — always reflects Kitchen's progress in the DB
   useEffect(() => {
-    if (data?.status && !initialLoaded) {
-      setStatus(data.status)
-      setInitialLoaded(true)
-    }
-  }, [data?.status, initialLoaded])
+    if (data?.status) setStatus(data.status)
+  }, [data?.status])
 
-  // Reset initialLoaded when id changes (new notification)
-  useEffect(() => {
-    setInitialLoaded(false)
-  }, [id])
-
-  const handleUnlockAudio = () => setAudioUnlocked(true)
   const stopAudio = () => {
     audioStopped.current = true
     if (audioRef.current) {
@@ -87,20 +88,15 @@ const Reciptionist = ({ item }: any) => {
     setAudioEnabled(false)
   }
 
-  // SEEN — stops audio
-  const handleSeen = async () => {
-    if (!id) return
-    try {
-      await updateMenuStatus({ id, status: 'seen' }).unwrap()
-      setStatus('seen')
-      stopAudio()
-      toast.success('Marked as Seen')
-    } catch {
-      toast.error('Failed to update status')
-    }
+  // SEEN — local acknowledgment only. Stops the alarm, never touches DB status.
+  // Kitchen remains the only writer of `status`.
+  const handleSeen = () => {
+    stopAudio()
+    setAcknowledged(true)
+    toast.success('Order acknowledged')
   }
 
-  // READY — only changes status, no audio change
+  // READY — the only action on this screen that writes to the DB
   const handleReady = async () => {
     if (!id) return
     try {
@@ -121,32 +117,6 @@ const Reciptionist = ({ item }: any) => {
     <>
       {data ? (
         <div className="modern-page">
-          {/* Tap-to-unlock audio overlay */}
-          {!audioUnlocked && (
-            <div
-              onClick={handleUnlockAudio}
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                background: 'rgba(0,0,0,0.78)',
-                zIndex: 9999,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                flexDirection: 'column',
-                color: '#fff',
-                textAlign: 'center',
-              }}>
-              <div style={{ fontSize: '64px' }}>🔔</div>
-              <h3 style={{ marginTop: '16px', fontWeight: 700 }}>New Order Arrived!</h3>
-              <p style={{ opacity: 0.8, marginTop: '8px' }}>Tap anywhere to enable notification sound</p>
-            </div>
-          )}
-
           <audio ref={audioRef} loop>
             <source src={audioSrc} type="audio/mpeg" />
           </audio>
@@ -205,15 +175,14 @@ const Reciptionist = ({ item }: any) => {
               </span>
             </div>
 
-            {/* Reception: Seen + Ready only */}
             <div className="d-flex gap-2 flex-wrap justify-content-center">
-              {/* SEEN — enabled only when pending, stops audio */}
-              <button type="button" disabled={status !== 'pending'} onClick={handleSeen} className="btn btn-primary d-flex align-items-center gap-1">
+              {/* SEEN — local acknowledgment only, stops audio, no DB write */}
+              <button type="button" disabled={acknowledged} onClick={handleSeen} className="btn btn-primary d-flex align-items-center gap-1">
                 <IconifyIcon icon="solar:eye-bold" />
-                {status === 'pending' ? 'Seen' : 'Seen ✓'}
+                {acknowledged ? 'Seen ✓' : 'Seen'}
               </button>
 
-              {/* READY — enabled only when prepare */}
+              {/* READY — only enabled once Kitchen has marked it 'prepare'; writes status to DB */}
               <button type="button" disabled={status !== 'prepare'} onClick={handleReady} className="btn btn-success d-flex align-items-center gap-1">
                 <IconifyIcon icon="solar:check-circle-bold" />
                 {status === 'ready' ? 'Ready ✓' : 'Mark Ready'}

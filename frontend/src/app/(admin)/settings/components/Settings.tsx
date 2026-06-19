@@ -80,7 +80,7 @@ const Settings = () => {
             <CardHeader>
               <CardTitle as={'h4'}>General Settings</CardTitle>
             </CardHeader>
-            <CardBody>
+            {/* <CardBody>
               <form onSubmit={handleGeneralSubmit}>
                 <div className="mb-3">
                   <label className="form-label">Username</label>
@@ -110,11 +110,11 @@ const Settings = () => {
                   {isLoading ? 'Updating...' : 'Update'}
                 </button>
               </form>
-            </CardBody>
+            </CardBody> */}
           </Card>
         </Col>
 
-        <Col lg={6}>
+        <Col lg={12}>
           <Card>
             <CardHeader>
               <CardTitle as={'h4'}>Notification Sound</CardTitle>

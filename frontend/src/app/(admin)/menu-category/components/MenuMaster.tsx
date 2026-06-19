@@ -14,20 +14,29 @@ import Swal from 'sweetalert2'
 import defaultImg from '../../../../assets/images/no-img.png'
 import { useRouter } from 'next/navigation'
 import socket from '@/lib/socket'
-
+import { useEffect } from 'react'
 const MenuMaster = () => {
   const router = useRouter()
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
   const itemPerPage = 10
 
-  const { data: menuMaster = [], isLoading, isError } = useGetMenuMasterQuery()
+  const { data: menuMaster = [], isLoading, isError, refetch } = useGetMenuMasterQuery()
   const [deleteMenuMaster] = useDeleteMenuMasterByIdMutation()
 
   // search
   const searchMenuMaster = menuMaster.filter((item: IMenuMaster) => {
     return item.itemName.toLowerCase().includes(search.toLowerCase())
   })
+  useEffect(() => {
+    socket.on('menu-list-updated', () => {
+      refetch()
+    })
+
+    return () => {
+      socket.off('menu-list-updated')
+    }
+  }, [refetch])
 
   // pagniation
   const startIndex = (page - 1) * itemPerPage

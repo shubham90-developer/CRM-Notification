@@ -24,13 +24,15 @@ const Notifications = ({ item }: any) => {
   const data = menuData || item
   const [status, setStatus] = useState(data?.status || 'pending')
   const [audioEnabled, setAudioEnabled] = useState(true)
-  const [audioUnlocked, setAudioUnlocked] = useState(false)
 
   // FIX 1: ref to permanently track that user stopped audio
   // Unlike state, ref value survives re-renders caused by RTK Query refetch
   const audioStopped = useRef(false)
 
-  // Join kitchen room and listen for new notifications
+  useEffect(() => {
+    audioStopped.current = false
+  }, [id])
+
   useEffect(() => {
     socket.emit('join-kitchen')
 
@@ -44,22 +46,20 @@ const Notifications = ({ item }: any) => {
     }
   }, [])
 
-  // FIX 2: guard with audioStopped.current so RTK refetch never restarts audio
   useEffect(() => {
-    if (data && audioRef.current && audioUnlocked && !audioStopped.current) {
-      audioRef.current.volume = 0.5
-      audioRef.current.play().catch(() => console.log('Audio blocked'))
-    }
-  }, [data, audioUnlocked])
+    if (!data || !audioRef.current || audioStopped.current) return
+    audioRef.current.volume = 0.5
+    audioRef.current.play().catch(() => {
+      setTimeout(() => {
+        audioRef.current?.play().catch(() => console.log('Audio blocked'))
+      }, 500)
+    })
+  }, [data])
 
   // Sync status from API data
   useEffect(() => {
     if (data?.status) setStatus(data.status)
   }, [data?.status])
-
-  const handleUnlockAudio = () => {
-    setAudioUnlocked(true)
-  }
 
   // FIX 3: set audioStopped.current = true BEFORE pausing
   const stopAudio = () => {
@@ -106,31 +106,6 @@ const Notifications = ({ item }: any) => {
     <>
       {data ? (
         <div className="modern-page">
-          {!audioUnlocked && (
-            <div
-              onClick={handleUnlockAudio}
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                background: 'rgba(0,0,0,0.75)',
-                zIndex: 9999,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                flexDirection: 'column',
-                color: '#fff',
-                textAlign: 'center',
-              }}>
-              <div style={{ fontSize: '64px' }}>🔔</div>
-              <h3 style={{ marginTop: '16px' }}>New Order Arrived!</h3>
-              <p style={{ opacity: 0.8 }}>Tap anywhere to enable notification sound</p>
-            </div>
-          )}
-
           {/* AUDIO — uses URL from settings */}
           <audio ref={audioRef} loop>
             <source src={audioSrc} type="audio/mpeg" />

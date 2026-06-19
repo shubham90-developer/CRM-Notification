@@ -8,7 +8,7 @@ import { useNotificationContext } from '@/context/useNotificationContext'
 import { useRoleLoginMutation } from '@/store/apiSlice'
 import { setCredentials } from '@/store/authSlice'
 import { useAppDispatch } from '@/hooks/useAppDispatch'
-
+import { unlockAudio } from '@/lib/audioUnlock'
 const loginFormSchema = yup.object({
   email: yup.string().email('Please enter valid email').required('Email is required'),
   password: yup.string().required('Password is required'),
@@ -63,7 +63,7 @@ const useSignIn = () => {
         variant: 'success',
       })
 
-      // Redirect based on role
+      unlockAudio()
       const redirectPath = getRoleRedirect(result.data.role)
       router.push(redirectPath)
     } catch (error: any) {

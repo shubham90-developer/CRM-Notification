@@ -269,7 +269,6 @@ export const updateMenuStatus = async (
         status: "prepare",
       });
     }
-
     if (status === "ready") {
       io.to("kitchen-room").emit("menu-status-updated", {
         _id: menu._id,
@@ -277,6 +276,10 @@ export const updateMenuStatus = async (
         status: "ready",
       });
     }
+
+    // NEW: global broadcast for anyone else watching (e.g. Admin Menu Master list)
+    io.emit("menu-list-updated", { _id: menu._id, status: menu.status });
+
     res.status(200).json({
       success: true,
       statusCode: 200,
