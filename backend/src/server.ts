@@ -13,7 +13,7 @@ export const io = new Server(httpServer, {
     origin: [
       "http://localhost:3000",
       "http://localhost:3001",
-      "http://localhost:3002",
+      "https://crm-notification.vercel.app",
     ],
     methods: ["GET", "POST"],
     credentials: true,
