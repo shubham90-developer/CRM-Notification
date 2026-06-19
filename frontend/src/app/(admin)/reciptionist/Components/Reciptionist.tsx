@@ -16,7 +16,6 @@ const Reciptionist = ({ item }: any) => {
   const id = searchParams.get('id')
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // APIs
   const { data: menuData, isLoading, isError } = useGetMenuMasterByIdQuery(id!, { skip: !id })
   const { data: settings } = useGetSettingsQuery()
   const [updateMenuStatus] = useUpdateMenuStatusMutation()
@@ -25,42 +24,62 @@ const Reciptionist = ({ item }: any) => {
   const [status, setStatus] = useState(data?.status || 'pending')
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [audioUnlocked, setAudioUnlocked] = useState(false)
-
-  // Join reception room and listen for new notifications
+  const audioStopped = useRef(false)
+  // Reset audio state on every new notification (id change)
   useEffect(() => {
+    setAudioUnlocked(false)
+    setAudioEnabled(true)
+  }, [id])
+
+  // Listen for new notifications — redirect to new id
+  useEffect(() => {
+    socket.on('new-menu-notification', (data) => {
+      toast.info(`🔔 New Order: ${data.itemName}`)
+      router.push(`/reciptionist?id=${data._id}`)
+    })
+
     socket.on('menu-status-updated', (data) => {
       if (data._id === id) {
         setStatus(data.status)
       }
-
-      toast.info(`🔔 New Order: ${data.itemName}`)
-      router.push(`/reciptionist?id=${data._id}`)
     })
+
     return () => {
-      socket.off('new-menu-notification')
       socket.off('new-menu-notification')
       socket.off('menu-status-updated')
     }
-  }, [])
+  }, [id])
 
   useEffect(() => {
-    if (data && audioRef.current && audioUnlocked) {
+    if (data && audioRef.current && audioUnlocked && !audioStopped.current) {
       audioRef.current.volume = 0.5
       audioRef.current.play().catch(() => console.log('Audio blocked'))
     }
   }, [data, audioUnlocked])
 
-  // Sync status from API data
+  // Reload audio element when settings URL loads
   useEffect(() => {
-    if (data?.status) setStatus(data.status)
-  }, [data?.status])
+    if (audioRef.current && settings?.notificationAudio) {
+      audioRef.current.load()
+    }
+  }, [settings?.notificationAudio])
 
-  // ✅ FIX 3: handler to unlock audio on first tap
-  const handleUnlockAudio = () => {
-    setAudioUnlocked(true)
-  }
+  const [initialLoaded, setInitialLoaded] = useState(false)
+  useEffect(() => {
+    if (data?.status && !initialLoaded) {
+      setStatus(data.status)
+      setInitialLoaded(true)
+    }
+  }, [data?.status, initialLoaded])
 
+  // Reset initialLoaded when id changes (new notification)
+  useEffect(() => {
+    setInitialLoaded(false)
+  }, [id])
+
+  const handleUnlockAudio = () => setAudioUnlocked(true)
   const stopAudio = () => {
+    audioStopped.current = true
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
@@ -68,12 +87,25 @@ const Reciptionist = ({ item }: any) => {
     setAudioEnabled(false)
   }
 
+  // SEEN — stops audio
+  const handleSeen = async () => {
+    if (!id) return
+    try {
+      await updateMenuStatus({ id, status: 'seen' }).unwrap()
+      setStatus('seen')
+      stopAudio()
+      toast.success('Marked as Seen')
+    } catch {
+      toast.error('Failed to update status')
+    }
+  }
+
+  // READY — only changes status, no audio change
   const handleReady = async () => {
     if (!id) return
     try {
       await updateMenuStatus({ id, status: 'ready' }).unwrap()
       setStatus('ready')
-      stopAudio()
       toast.success('Order marked as Ready!')
     } catch {
       toast.error('Failed to update status')
@@ -89,10 +121,7 @@ const Reciptionist = ({ item }: any) => {
     <>
       {data ? (
         <div className="modern-page">
-          {/* ✅ FIX 4: Tap-to-unlock overlay — shown until user taps it.
-              router.push() is programmatic (no user gesture), so browser blocks
-              autoplay. This overlay forces a tap which counts as a user gesture,
-              allowing audio to play after. */}
+          {/* Tap-to-unlock audio overlay */}
           {!audioUnlocked && (
             <div
               onClick={handleUnlockAudio}
@@ -118,17 +147,14 @@ const Reciptionist = ({ item }: any) => {
             </div>
           )}
 
-          {/* AUDIO */}
           <audio ref={audioRef} loop>
             <source src={audioSrc} type="audio/mpeg" />
           </audio>
 
-          {/* BACKGROUND WAVES */}
           <div className="wave wave1"></div>
           <div className="wave wave2"></div>
           <div className="wave wave3"></div>
 
-          {/* SOUND BARS */}
           {audioEnabled && (
             <div className="voice-bars">
               <span></span>
@@ -139,9 +165,7 @@ const Reciptionist = ({ item }: any) => {
             </div>
           )}
 
-          {/* CARD */}
           <div className="food-card">
-            {/* HEADER */}
             <div className="d-flex align-items-center gap-3 mb-4">
               <button className="back-btn" onClick={() => router.back()}>
                 <IconifyIcon icon="solar:arrow-left-linear" />
@@ -150,12 +174,10 @@ const Reciptionist = ({ item }: any) => {
               <span className="badge bg-info ms-auto">Reception</span>
             </div>
 
-            {/* IMAGE */}
             <div className="image-box">
               <Image src={data?.image || product} alt={data?.itemName || 'food'} width={220} height={150} className="food-image rounded-1" />
             </div>
 
-            {/* TAGS */}
             <div className="tags">
               <span className="tag green">🥗 {data?.qty}</span>
               <span
@@ -174,7 +196,6 @@ const Reciptionist = ({ item }: any) => {
               <p className="text-muted small mb-3">{data?.desc || 'No description available'}</p>
             </div>
 
-            {/* STATUS BADGE */}
             <div className="text-center mb-3">
               <span
                 className={`badge fs-6 px-3 py-2 ${
@@ -184,21 +205,24 @@ const Reciptionist = ({ item }: any) => {
               </span>
             </div>
 
-            {/* ONLY "Ready" BUTTON for Reception */}
-            <div className="d-flex justify-content-center">
-              <button
-                type="button"
-                disabled={status === 'ready' || status === 'pending' || status === 'seen'}
-                onClick={handleReady}
-                className="btn btn-success btn-lg d-flex align-items-center gap-2 px-5">
+            {/* Reception: Seen + Ready only */}
+            <div className="d-flex gap-2 flex-wrap justify-content-center">
+              {/* SEEN — enabled only when pending, stops audio */}
+              <button type="button" disabled={status !== 'pending'} onClick={handleSeen} className="btn btn-primary d-flex align-items-center gap-1">
+                <IconifyIcon icon="solar:eye-bold" />
+                {status === 'pending' ? 'Seen' : 'Seen ✓'}
+              </button>
+
+              {/* READY — enabled only when prepare */}
+              <button type="button" disabled={status !== 'prepare'} onClick={handleReady} className="btn btn-success d-flex align-items-center gap-1">
                 <IconifyIcon icon="solar:check-circle-bold" />
-                {status === 'ready' ? 'Ready ✓' : 'Mark as Ready'}
+                {status === 'ready' ? 'Ready ✓' : 'Mark Ready'}
               </button>
             </div>
 
-            {status === 'pending' || status === 'seen' ? (
+            {(status === 'pending' || status === 'seen') && (
               <p className="text-center text-muted small mt-3">⏳ Waiting for Kitchen to start preparing...</p>
-            ) : null}
+            )}
           </div>
 
           <style jsx>{`

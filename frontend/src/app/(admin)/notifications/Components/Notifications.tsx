@@ -9,6 +9,7 @@ import { useGetMenuMasterByIdQuery, useUpdateMenuStatusMutation } from '@/store/
 import { useGetSettingsQuery } from '@/store/settingApi'
 import { toast } from 'react-toastify'
 import socket from '@/lib/socket'
+
 const Notifications = ({ item }: any) => {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -25,22 +26,31 @@ const Notifications = ({ item }: any) => {
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [audioUnlocked, setAudioUnlocked] = useState(false)
 
+  // FIX 1: ref to permanently track that user stopped audio
+  // Unlike state, ref value survives re-renders caused by RTK Query refetch
+  const audioStopped = useRef(false)
+
+  // Join kitchen room and listen for new notifications
   useEffect(() => {
+    socket.emit('join-kitchen')
+
     socket.on('new-menu-notification', (data) => {
       toast.info(`🔔 New Order: ${data.itemName}`)
       router.push(`/notifications?id=${data._id}`)
     })
+
     return () => {
       socket.off('new-menu-notification')
     }
   }, [])
 
+  // FIX 2: guard with audioStopped.current so RTK refetch never restarts audio
   useEffect(() => {
-    if (data && audioRef.current && audioUnlocked) {
+    if (data && audioRef.current && audioUnlocked && !audioStopped.current) {
       audioRef.current.volume = 0.5
       audioRef.current.play().catch(() => console.log('Audio blocked'))
     }
-  }, [data, audioUnlocked]) // audioUnlocked added as dependency
+  }, [data, audioUnlocked])
 
   // Sync status from API data
   useEffect(() => {
@@ -51,7 +61,9 @@ const Notifications = ({ item }: any) => {
     setAudioUnlocked(true)
   }
 
+  // FIX 3: set audioStopped.current = true BEFORE pausing
   const stopAudio = () => {
+    audioStopped.current = true // blocks useEffect from restarting audio after refetch
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
@@ -59,12 +71,14 @@ const Notifications = ({ item }: any) => {
     setAudioEnabled(false)
   }
 
+  // FIX 4: call stopAudio() BEFORE await so it runs synchronously
+  // before RTK Query refetch can re-trigger the audio useEffect
   const handleSeen = async () => {
     if (!id) return
     try {
+      stopAudio() // ← FIRST, before any async operation
       await updateMenuStatus({ id, status: 'seen' }).unwrap()
       setStatus('seen')
-      stopAudio()
       toast.success('Marked as Seen')
     } catch {
       toast.error('Failed to update status')
@@ -74,6 +88,7 @@ const Notifications = ({ item }: any) => {
   const handlePrepare = async () => {
     if (!id) return
     try {
+      stopAudio() // ← FIRST, before any async operation
       await updateMenuStatus({ id, status: 'prepare' }).unwrap()
       setStatus('prepare')
       toast.success('Marked as Preparing')
@@ -91,7 +106,6 @@ const Notifications = ({ item }: any) => {
     <>
       {data ? (
         <div className="modern-page">
-          {/* ✅ ADD THIS OVERLAY BLOCK */}
           {!audioUnlocked && (
             <div
               onClick={handleUnlockAudio}
@@ -116,7 +130,6 @@ const Notifications = ({ item }: any) => {
               <p style={{ opacity: 0.8 }}>Tap anywhere to enable notification sound</p>
             </div>
           )}
-          {/* END OF OVERLAY */}
 
           {/* AUDIO — uses URL from settings */}
           <audio ref={audioRef} loop>

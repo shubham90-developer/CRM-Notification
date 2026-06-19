@@ -27,7 +27,7 @@ export const apiSlice = createApi({
   reducerPath: 'api',
 
   baseQuery: fetchBaseQuery({
-    baseUrl: 'https://crm-notification-o416.onrender.com/v1/api',
+    baseUrl: 'http://localhost:8090/v1/api',
 
     prepareHeaders: (headers, { getState }) => {
       const token = (getState() as IRootState).auth?.token
@@ -40,6 +40,11 @@ export const apiSlice = createApi({
   }),
 
   endpoints: (builder) => ({
+    // Get current role user from token (for rehydrating user on refresh)
+    getRoleMe: builder.query<LoginResponse, void>({
+      query: () => '/roles/me',
+    }),
+
     // For admin/vendor/user (User model)
     login: builder.mutation<LoginResponse, LoginRequest>({
       query: (credentials) => ({
@@ -60,4 +65,4 @@ export const apiSlice = createApi({
   }),
 })
 
-export const { useLoginMutation, useRoleLoginMutation } = apiSlice
+export const { useLoginMutation, useRoleLoginMutation, useGetRoleMeQuery } = apiSlice

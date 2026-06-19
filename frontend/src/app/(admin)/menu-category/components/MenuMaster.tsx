@@ -13,8 +13,7 @@ import { toast } from 'react-toastify'
 import Swal from 'sweetalert2'
 import defaultImg from '../../../../assets/images/no-img.png'
 import { useRouter } from 'next/navigation'
-
-const handleDelete = () => {}
+import socket from '@/lib/socket'
 
 const MenuMaster = () => {
   const router = useRouter()
@@ -60,8 +59,15 @@ const MenuMaster = () => {
 
   // pass data notification
 
-  const handleNotification = (id: string) => {
-    router.push(`/notifications?id=${id}`)
+  const handleNotification = (item: IMenuMaster) => {
+    socket.emit('menu-master-notify', {
+      _id: item._id,
+      itemName: item.itemName,
+      image: item.image,
+      priority: item.priority,
+      qty: item.qty,
+      desc: item.desc,
+    })
   }
 
   if (isLoading) return <div>Loading...</div>
@@ -190,7 +196,7 @@ const MenuMaster = () => {
 
                           {/* Actions */}
                           <div className="mt-auto d-flex gap-2">
-                            <button className="btn btn-soft-success flex-fill" onClick={() => handleNotification(item._id)}>
+                            <button className="btn btn-soft-success flex-fill" onClick={() => handleNotification(item)}>
                               <IconifyIcon icon="solar:bell-bold-duotone" className="fs-5" />
                             </button>
 

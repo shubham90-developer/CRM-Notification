@@ -15,6 +15,7 @@ const Notifications = () => {
 
   useEffect(() => {
     socket.on('new-menu-notification', (data) => {
+      console.log('STEP 3: Notification received', data)
       dispatch(addNotification(data))
     })
     return () => {
@@ -22,14 +23,22 @@ const Notifications = () => {
     }
   }, [dispatch])
 
+  useEffect(() => {
+    console.log('STEP 2: Notification listener mounted')
+
+    socket.on('new-menu-notification', (data) => {
+      console.log('STEP 3: Notification received', data)
+    })
+
+    return () => {
+      console.log('STEP 2: Notification listener unmounted')
+      socket.off('new-menu-notification')
+    }
+  }, [])
+
   return (
     <Dropdown className="topbar-item">
-      <DropdownToggle
-        as={'a'}
-        type="button"
-        className="topbar-button position-relative content-none"
-        id="page-header-notifications-dropdown"
-        onClick={() => dispatch(markAllRead())}>
+      <DropdownToggle as={'a'} type="button" className="topbar-button position-relative content-none" id="page-header-notifications-dropdown">
         <IconifyIcon icon="solar:bell-bing-bold-duotone" className="fs-24 align-middle" />
         {unreadCount > 0 && (
           <span className="position-absolute topbar-badge fs-10 translate-middle badge bg-danger rounded-pill">

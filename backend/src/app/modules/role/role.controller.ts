@@ -203,6 +203,44 @@ export const getAvailablePermissions = async (
   }
 };
 
+// Get current logged-in role user from token
+export const getRoleMe = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      next(new appError("No token provided", 401));
+      return;
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    const jwt = await import("jsonwebtoken");
+    const decoded: any = jwt.default.verify(
+      token,
+      process.env.JWT_SECRET as string,
+    );
+
+    const role = await Role.findOne({ _id: decoded.userId, isDeleted: false });
+    if (!role) {
+      next(new appError("Role user not found", 404));
+      return;
+    }
+
+    res.json({
+      success: true,
+      statusCode: 200,
+      message: "Role user retrieved successfully",
+      token,
+      data: role,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 // NEW — Login endpoint for Role/staff users
 export const roleLogin = async (
   req: Request,

@@ -41,6 +41,13 @@ export const createMenuMaster = async (
 
     const menuMaster = await MenuMaster.create(validatedData);
 
+    console.log("STEP 1: Emit code reached");
+
+    const room = io.sockets.adapter.rooms.get("kitchen-room");
+    console.log("STEP 1: Room Size =", room?.size || 0);
+
+    console.log("STEP 1: About to emit");
+
     io.to("kitchen-room").emit("new-menu-notification", {
       _id: menuMaster._id,
       itemName: menuMaster.itemName,
