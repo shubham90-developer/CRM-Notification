@@ -27,7 +27,7 @@ export const apiSlice = createApi({
   reducerPath: 'api',
 
   baseQuery: fetchBaseQuery({
-    baseUrl: process.env.NEXT_PUBLIC_API_URL,
+    baseUrl: process.env.NEXT_PUBLIC_BACKEND_URL,
 
     prepareHeaders: (headers, { getState }) => {
       const token = (getState() as IRootState).auth?.token
