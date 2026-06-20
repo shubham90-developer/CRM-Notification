@@ -16,30 +16,37 @@ const Reciptionist = ({ item }: any) => {
   const id = searchParams.get('id')
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const { data: menuData, isLoading, isError } = useGetMenuMasterByIdQuery(id!, { skip: !id })
+  const { data: menuData, isLoading, isError, refetch } = useGetMenuMasterByIdQuery(id!, { skip: !id })
   const { data: settings } = useGetSettingsQuery()
   const [updateMenuStatus] = useUpdateMenuStatusMutation()
-
+  const [notifyKey, setNotifyKey] = useState(0)
   const data = menuData || item
   const [status, setStatus] = useState(data?.status || 'pending')
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [acknowledged, setAcknowledged] = useState(false) // local only — has Reception clicked Seen for this id?
-
+  const [dismissed, setDismissed] = useState(false)
   // Tracks if user manually stopped audio — survives RTK refetch re-renders
   const audioStopped = useRef(false)
 
-  // Reset audio + acknowledgment state on every new notification (id change)
   useEffect(() => {
     audioStopped.current = false
     setAudioEnabled(true)
     setAcknowledged(false)
-  }, [id])
+    setDismissed(false)
+  }, [id, notifyKey])
 
   // Listen for new notifications — redirect to new id
   useEffect(() => {
     socket.on('new-menu-notification', (data) => {
       toast.info(`🔔 New Order: ${data.itemName}`)
       router.push(`/reciptionist?id=${data._id}`)
+      setNotifyKey((k) => k + 1) // forces reset even when id is unchanged (re-send)
+
+      // Same item re-sent — URL won't change, so force a fresh fetch
+      // to pick up the status reset Admin just performed
+      if (data._id === id) {
+        refetch()
+      }
     })
 
     socket.on('menu-status-updated', (data) => {
@@ -52,10 +59,8 @@ const Reciptionist = ({ item }: any) => {
       socket.off('new-menu-notification')
       socket.off('menu-status-updated')
     }
-  }, [id])
+  }, [id, refetch])
 
-  // Auto-play audio as soon as data loads — no tap needed
-  // Works because unlockAudio() was called at login (user gesture)
   useEffect(() => {
     if (!data || !audioRef.current || audioStopped.current) return
     audioRef.current.volume = 0.5
@@ -65,7 +70,7 @@ const Reciptionist = ({ item }: any) => {
         audioRef.current?.play().catch(() => console.log('Audio blocked'))
       }, 500)
     })
-  }, [data])
+  }, [data, notifyKey])
 
   // Reload audio element when settings URL loads
   useEffect(() => {
@@ -96,12 +101,12 @@ const Reciptionist = ({ item }: any) => {
     toast.success('Order acknowledged')
   }
 
-  // READY — the only action on this screen that writes to the DB
   const handleReady = async () => {
     if (!id) return
     try {
       await updateMenuStatus({ id, status: 'ready' }).unwrap()
       setStatus('ready')
+      setDismissed(true)
       toast.success('Order marked as Ready!')
     } catch {
       toast.error('Failed to update status')
@@ -115,7 +120,7 @@ const Reciptionist = ({ item }: any) => {
 
   return (
     <>
-      {data ? (
+      {data && !dismissed ? (
         <div className="modern-page">
           <audio ref={audioRef} loop>
             <source src={audioSrc} type="audio/mpeg" />

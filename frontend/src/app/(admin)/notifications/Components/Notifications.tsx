@@ -17,14 +17,14 @@ const Notifications = ({ item }: any) => {
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // APIs
-  const { data: menuData, isLoading, isError } = useGetMenuMasterByIdQuery(id!, { skip: !id })
+  const { data: menuData, isLoading, isError, refetch } = useGetMenuMasterByIdQuery(id!, { skip: !id })
   const { data: settings } = useGetSettingsQuery()
   const [updateMenuStatus] = useUpdateMenuStatusMutation()
-
+  const [notifyKey, setNotifyKey] = useState(0)
   const data = menuData || item
   const [status, setStatus] = useState(data?.status || 'pending')
   const [audioEnabled, setAudioEnabled] = useState(true)
-
+  const [dismissed, setDismissed] = useState(false)
   // FIX 1: ref to permanently track that user stopped audio
   // Unlike state, ref value survives re-renders caused by RTK Query refetch
   const audioStopped = useRef(false)
@@ -34,17 +34,27 @@ const Notifications = ({ item }: any) => {
   }, [id])
 
   useEffect(() => {
+    audioStopped.current = false
+    setDismissed(false)
+  }, [id, notifyKey])
+
+  useEffect(() => {
     socket.emit('join-kitchen')
 
     socket.on('new-menu-notification', (data) => {
       toast.info(`🔔 New Order: ${data.itemName}`)
       router.push(`/notifications?id=${data._id}`)
+      setNotifyKey((k) => k + 1) // forces reset even when id is unchanged (re-send)
+
+      if (data._id === id) {
+        refetch()
+      }
     })
 
     return () => {
       socket.off('new-menu-notification')
     }
-  }, [])
+  }, [id, refetch])
 
   useEffect(() => {
     if (!data || !audioRef.current || audioStopped.current) return
@@ -54,7 +64,7 @@ const Notifications = ({ item }: any) => {
         audioRef.current?.play().catch(() => console.log('Audio blocked'))
       }, 500)
     })
-  }, [data])
+  }, [data, notifyKey])
 
   // Sync status from API data
   useEffect(() => {
@@ -88,9 +98,10 @@ const Notifications = ({ item }: any) => {
   const handlePrepare = async () => {
     if (!id) return
     try {
-      stopAudio() // ← FIRST, before any async operation
+      stopAudio()
       await updateMenuStatus({ id, status: 'prepare' }).unwrap()
       setStatus('prepare')
+      setDismissed(true)
       toast.success('Marked as Preparing')
     } catch {
       toast.error('Failed to update status')
@@ -104,7 +115,7 @@ const Notifications = ({ item }: any) => {
 
   return (
     <>
-      {data ? (
+      {data && !dismissed ? (
         <div className="modern-page">
           {/* AUDIO — uses URL from settings */}
           <audio ref={audioRef} loop>

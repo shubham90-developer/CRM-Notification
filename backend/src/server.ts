@@ -39,7 +39,6 @@ io.on("connection", (socket) => {
   socket.on("menu-master-notify", (data) => {
     console.log("Menu Master triggered notification for:", data.itemName);
     io.to("kitchen-room").emit("new-menu-notification", data);
-    io.to("reception-room").emit("new-menu-notification", data);
   });
 
   socket.on("disconnect", () => {

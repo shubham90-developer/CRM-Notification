@@ -263,10 +263,13 @@ export const updateMenuStatus = async (
     }
 
     if (status === "prepare") {
-      io.to("reception-room").emit("menu-status-updated", {
+      io.to("reception-room").emit("new-menu-notification", {
         _id: menu._id,
         itemName: menu.itemName,
-        status: "prepare",
+        image: menu.image,
+        priority: menu.priority,
+        qty: menu.qty,
+        desc: menu.desc,
       });
     }
     if (status === "ready") {

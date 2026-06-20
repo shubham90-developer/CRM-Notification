@@ -8,7 +8,7 @@ import { Badge, Card, CardBody, CardFooter, CardTitle, Col, Row } from 'react-bo
 import AddMenuMaster from './AddMenuMaster'
 import EditMenuMaster from './EditMenuMaster'
 import Image from 'next/image'
-import { IMenuMaster, useDeleteMenuMasterByIdMutation, useGetMenuMasterQuery } from '@/store/menuMasterApi'
+import { IMenuMaster, useDeleteMenuMasterByIdMutation, useGetMenuMasterQuery, useUpdateMenuStatusMutation } from '@/store/menuMasterApi'
 import { toast } from 'react-toastify'
 import Swal from 'sweetalert2'
 import defaultImg from '../../../../assets/images/no-img.png'
@@ -23,7 +23,7 @@ const MenuMaster = () => {
 
   const { data: menuMaster = [], isLoading, isError, refetch } = useGetMenuMasterQuery()
   const [deleteMenuMaster] = useDeleteMenuMasterByIdMutation()
-
+  const [updateMenuStatus] = useUpdateMenuStatusMutation()
   // search
   const searchMenuMaster = menuMaster.filter((item: IMenuMaster) => {
     return item.itemName.toLowerCase().includes(search.toLowerCase())
@@ -66,9 +66,15 @@ const MenuMaster = () => {
     }
   }
 
-  // pass data notification
+  const handleNotification = async (item: IMenuMaster) => {
+    try {
+      // Reset status to pending every time — covers both first send and re-send
+      await updateMenuStatus({ id: item._id, status: 'pending' }).unwrap()
+    } catch {
+      toast.error('Failed to reset order status')
+      return
+    }
 
-  const handleNotification = (item: IMenuMaster) => {
     socket.emit('menu-master-notify', {
       _id: item._id,
       itemName: item.itemName,
