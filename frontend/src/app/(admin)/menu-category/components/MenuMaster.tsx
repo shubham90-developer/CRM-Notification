@@ -15,13 +15,30 @@ import defaultImg from '../../../../assets/images/no-img.png'
 import { useRouter } from 'next/navigation'
 import socket from '@/lib/socket'
 import { useEffect } from 'react'
+
 const MenuMaster = () => {
   const router = useRouter()
   const [search, setSearch] = React.useState('')
-  const [page, setPage] = React.useState(1)
-  const itemPerPage = 10
+  const getItemsPerPage = () => {
+    if (typeof window === 'undefined') return 8
+    const width = window.innerWidth
+    if (width >= 1400) return 12
+    if (width >= 1200) return 9
+    if (width >= 768) return 6
+    return 4
+  }
+
+  const itemPerPage = getItemsPerPage()
+  const [visibleCount, setVisibleCount] = React.useState(itemPerPage)
 
   const { data: menuMaster = [], isLoading, isError, refetch } = useGetMenuMasterQuery()
+
+  // Reset visibleCount when screen size changes
+  React.useEffect(() => {
+    const handleResize = () => setVisibleCount(getItemsPerPage())
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
   const [deleteMenuMaster] = useDeleteMenuMasterByIdMutation()
   const [updateMenuStatus] = useUpdateMenuStatusMutation()
   // search
@@ -39,12 +56,8 @@ const MenuMaster = () => {
   }, [refetch])
 
   // pagniation
-  const startIndex = (page - 1) * itemPerPage
-  const endIndex = startIndex + itemPerPage
-  const currentItems = searchMenuMaster.slice(startIndex, endIndex)
-
-  const totalPages = Math.ceil(searchMenuMaster.length / itemPerPage)
-
+  const currentItems = searchMenuMaster.slice(0, visibleCount)
+  const hasMore = visibleCount < searchMenuMaster.length
   // handle delete
   const handleDelete = async (id: string) => {
     const result = await Swal.fire({
@@ -211,8 +224,11 @@ const MenuMaster = () => {
 
                           {/* Actions */}
                           <div className="mt-auto d-flex gap-2">
-                            <button className="btn btn-soft-success flex-fill" onClick={() => handleNotification(item)}>
-                              <IconifyIcon icon="solar:bell-bold-duotone" className="fs-5" />
+                            <button
+                              className={`btn flex-fill position-relative ${item.status === 'prepare' ? 'bell-btn-preparing' : 'btn-soft-success'}`}
+                              onClick={() => handleNotification(item)}>
+                              {item.status === 'prepare' && <span className="preparing-badge">PREPARING</span>}
+                              <IconifyIcon icon="solar:bell-bold-duotone" className={`fs-5 ${item.status === 'prepare' ? 'bell-blink' : ''}`} />
                             </button>
 
                             <EditMenuMaster item={item} />
@@ -239,41 +255,69 @@ const MenuMaster = () => {
               </div>
             </CardBody>
 
-            <CardFooter className="border-top">
-              <nav>
-                <ul className="pagination justify-content-end mb-0">
-                  {/* PREVIOUS */}
-                  <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
-                    <button type="button" className="page-link" disabled={page === 1} onClick={() => setPage((prev) => prev - 1)}>
-                      Previous
-                    </button>
-                  </li>
-
-                  {/* PAGE */}
-                  {Array.from({ length: totalPages }, (_, index) => {
-                    const pageNumber = index + 1
-
-                    return (
-                      <li key={pageNumber} className={`page-item ${page === pageNumber ? 'active' : ''}`}>
-                        <button type="button" className="page-link" onClick={() => setPage(pageNumber)}>
-                          {pageNumber}
-                        </button>
-                      </li>
-                    )
-                  })}
-
-                  {/* NEXT */}
-                  <li className={`page-item ${page === totalPages ? 'disabled' : ''}`}>
-                    <button type="button" className="page-link" disabled={page === totalPages} onClick={() => setPage((prev) => prev + 1)}>
-                      Next
-                    </button>
-                  </li>
-                </ul>
-              </nav>
-            </CardFooter>
+            {hasMore && (
+              <CardFooter className="border-top text-center">
+                <button className="btn btn-outline-primary px-4" onClick={() => setVisibleCount((prev) => prev + itemPerPage)}>
+                  Load More
+                </button>
+              </CardFooter>
+            )}
           </Card>
         </Col>
       </Row>
+      <style>{`
+        @keyframes bellRing {
+          0%   { transform: rotate(0deg); }
+          10%  { transform: rotate(18deg); }
+          20%  { transform: rotate(-16deg); }
+          30%  { transform: rotate(14deg); }
+          40%  { transform: rotate(-10deg); }
+          50%  { transform: rotate(6deg); }
+          60%  { transform: rotate(-4deg); }
+          70%  { transform: rotate(2deg); }
+          80%  { transform: rotate(-1deg); }
+          100% { transform: rotate(0deg); }
+        }
+
+        @keyframes pulseGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255, 140, 0, 0.5); }
+          50%       { box-shadow: 0 0 0 8px rgba(255, 140, 0, 0); }
+        }
+
+        @keyframes badgePop {
+          0%, 100% { transform: translate(-50%, -50%) scale(1); }
+          50%       { transform: translate(-50%, -50%) scale(1.3); }
+        }
+
+        .bell-blink {
+          animation: bellRing 1s ease-in-out infinite;
+          transform-origin: top center;
+          color: #ff8c00;
+          filter: drop-shadow(0 0 4px rgba(255,140,0,0.8));
+        }
+
+        .bell-btn-preparing {
+          animation: pulseGlow 1.5s ease-in-out infinite;
+          background: linear-gradient(135deg, #fff3e0, #ffe0b2) !important;
+          border: 1.5px solid #ff8c00 !important;
+        }
+
+        .preparing-badge {
+          position: absolute;
+          top: -6px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: #ff8c00;
+          color: white;
+          font-size: 8px;
+          font-weight: 700;
+          padding: 1px 5px;
+          border-radius: 20px;
+          white-space: nowrap;
+          animation: badgePop 1s ease-in-out infinite;
+          letter-spacing: 0.3px;
+        }
+      `}</style>
     </>
   )
 }

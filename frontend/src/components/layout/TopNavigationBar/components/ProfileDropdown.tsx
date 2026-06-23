@@ -30,7 +30,7 @@ const ProfileDropdown = () => {
         aria-haspopup="true"
         aria-expanded="false">
         <span className="d-flex align-items-center">
-          <Image className="rounded-circle" width={32} src={avatar1} alt="avatar-3" />
+          <Image className="rounded-circle" width={32} height={32} src="/logo.png" alt="avatar-3" />
         </span>
       </DropdownToggle>
       <DropdownMenu className="dropdown-menu-end">

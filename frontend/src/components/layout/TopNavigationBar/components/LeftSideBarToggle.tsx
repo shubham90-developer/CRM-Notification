@@ -3,8 +3,13 @@ import IconifyIcon from '@/components/wrappers/IconifyIcon'
 import React, { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { useLayoutContext } from '@/context/useLayoutContext'
+import { useSelector } from 'react-redux'
+import { RootState } from '@/store'
 
 const LeftSideBarToggle = () => {
+  const user = useSelector((state: RootState) => state.auth.user)
+  const role = user?.role?.toLowerCase()
+
   const {
     menu: { size },
     changeMenu: { size: changeMenuSize },
@@ -26,6 +31,8 @@ const LeftSideBarToggle = () => {
       toggleBackdrop()
     }
   }, [pathname])
+
+  if (role === 'kitchen_master' || role === 'reception_master') return null
 
   return (
     <div className="topbar-item">
