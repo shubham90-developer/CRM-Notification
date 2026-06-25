@@ -15,6 +15,175 @@ import defaultImg from '../../../../assets/images/no-img.png'
 import { useRouter } from 'next/navigation'
 import socket from '@/lib/socket'
 
+// ── Shared time formatter ─────────────────────────────────────────────────────
+const formatTime = (seconds: number) => {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
+
+// ── Single card — its own component so the timer hook isn't inside a .map() ──
+interface MenuMasterCardProps {
+  item: IMenuMaster
+  onNotify: (item: IMenuMaster) => void
+  onDelete: (id: string) => void
+  onSeen: (item: IMenuMaster) => void
+}
+
+const MenuMasterCard = ({ item, onNotify, onDelete, onSeen }: MenuMasterCardProps) => {
+  const isThisItemReady = item.status === 'ready'
+
+  // ── Inline timer logic ──────────────────────────────────────────────────
+  // Starts ticking when bellStartedAt is set (bell clicked), freezes when
+  // readyAt is set (kitchen marked it ready). Driven by real timestamps,
+  // not a client-only counter, so it survives refresh and stays in sync
+  // with the Kitchen Master card via socket-triggered refetches.
+  const getElapsed = () => {
+    if (!item.bellStartedAt) return 0
+    const start = new Date(item.bellStartedAt).getTime()
+    const end = item.readyAt ? new Date(item.readyAt).getTime() : Date.now()
+    return Math.max(0, Math.floor((end - start) / 1000))
+  }
+
+  const [elapsedSeconds, setElapsedSeconds] = useState(getElapsed)
+
+  useEffect(() => {
+    setElapsedSeconds(getElapsed())
+
+    // Not started yet, or already finished — don't run a ticking interval
+    if (!item.bellStartedAt || item.readyAt) return
+
+    const interval = setInterval(() => {
+      setElapsedSeconds(getElapsed())
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [item.bellStartedAt, item.readyAt])
+  // ─────────────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="col-12 col-sm-6 col-lg-4 col-xl-3">
+      <div className={`card border-0 shadow-sm h-100 rounded-4 overflow-hidden menu-card ${isThisItemReady ? 'ready-card-glow' : ''}`}>
+        {/* Image */}
+        <div className="position-relative">
+          {item.image ? (
+            <Image
+              src={item.image || '/images/no-image.png'}
+              alt={item.itemName}
+              width={500}
+              height={250}
+              className="w-100"
+              style={{ height: '120px', objectFit: 'fill' }}
+            />
+          ) : (
+            <Image src={defaultImg} alt="no img" width={500} height={150} className="w-100" style={{ height: '120px', objectFit: 'contain' }} />
+          )}
+
+          {/* Priority badge */}
+          <span
+            className={`badge position-absolute top-0 end-0 m-3 px-3 py-1 ${
+              item.priority === 'critical'
+                ? 'bg-danger'
+                : item.priority === 'high'
+                  ? 'bg-warning text-dark'
+                  : item.priority === 'medium'
+                    ? 'bg-info'
+                    : 'bg-success'
+            }`}>
+            {item.priority}
+          </span>
+
+          {/* Ready ribbon */}
+          {isThisItemReady && <div className="ready-ribbon">✅ READY</div>}
+        </div>
+
+        {/* Card body */}
+        <div className="card-body p-2 d-flex flex-column">
+          <div className="mb-2">
+            <h4 className="fw-bold mb-0 pt-2 pb-1 text-truncate">{item.itemName}</h4>
+          </div>
+
+          <p className="text-muted small mb-2">{item.desc.slice(0, 100) || 'No description available'}</p>
+
+          <hr className="my-0 opacity-25" />
+
+          {/* Qty + Timer + Status */}
+          <div className="d-flex justify-content-between align-items-center py-1">
+            <div className="d-flex align-items-center gap-2">
+              <IconifyIcon icon="solar:box-bold-duotone" className="text-warning fs-5" />
+              <span className="fw-semibold small">Qty: {item.qty}</span>
+              <span className="fw-semibold small d-flex align-items-center gap-1">
+                <IconifyIcon icon="solar:clock-circle-bold" className="text-secondary" />
+                {formatTime(elapsedSeconds)}
+              </span>
+            </div>
+            {item.status ? (
+              <Badge
+                bg={item.status === 'ready' ? 'success' : item.status === 'prepare' ? 'warning' : item.status === 'seen' ? 'info' : 'secondary'}
+                className="rounded-pill px-2 py-2 text-capitalize">
+                {item.status}
+              </Badge>
+            ) : (
+              <Badge bg="secondary" className="rounded-pill px-4 py-2 text-capitalize">
+                Status
+              </Badge>
+            )}
+          </div>
+
+          <hr className="my-0 opacity-25" />
+
+          {/* Actions */}
+          <div className="mt-auto d-flex gap-2">
+            {/* Bell — send notification */}
+            {item.status === 'ready' ? (
+              <button className="btn flex-fill position-relative btn-soft-primary" onClick={() => onNotify(item)}>
+                <span className="preparing-badge" style={{ background: '#0d6efd' }}>
+                  RESEND
+                </span>
+                <IconifyIcon icon="solar:refresh-bold-duotone" className="fs-5" />
+              </button>
+            ) : (
+              <button
+                className={`btn flex-fill position-relative ${item.status === 'prepare' ? 'bell-btn-preparing' : 'btn-soft-success'}`}
+                onClick={() => onNotify(item)}>
+                {item.status === 'prepare' && <span className="preparing-badge">PREPARING</span>}
+                <IconifyIcon icon="solar:bell-bold-duotone" className={`fs-5 ${item.status === 'prepare' ? 'bell-blink' : ''}`} />
+              </button>
+            )}
+
+            {/* Edit */}
+            <EditMenuMaster item={item} />
+
+            {/* Delete */}
+            <button className="btn btn-soft-danger flex-fill" onClick={() => onDelete(item._id)}>
+              <IconifyIcon icon="solar:trash-bin-minimalistic-2-broken" className="fs-5" />
+            </button>
+
+            {/* 
+              Seen btn:
+              - Enabled only when status === 'ready'
+              - Stops audio + marks item as 'seen' in DB
+              - Pulses when it's the item that triggered audio
+            */}
+            <button
+              type="button"
+              disabled={item.status !== 'ready'}
+              onClick={() => onSeen(item)}
+              className={`btn d-flex align-items-center gap-1 ${
+                item.status === 'ready' ? 'btn-secondary' : isThisItemReady ? 'btn-success seen-pulse' : 'btn-outline-secondary'
+              }`}>
+              <IconifyIcon icon="solar:eye-bold" />
+              {item.status === 'seen' ? 'Seen ✓' : 'Seen'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main list component ───────────────────────────────────────────────────────
 const MenuMaster = () => {
   const router = useRouter()
   const [search, setSearch] = React.useState('')
@@ -27,8 +196,7 @@ const MenuMaster = () => {
   const [readyItemId, setReadyItemId] = useState<string | null>(null)
   const [audioPlaying, setAudioPlaying] = useState(false)
   const { data: settings } = useGetSettingsQuery()
-  const [counter, setCounter] = useState<Record<string, number>>({})
-  const intervals = useRef<Record<string, NodeJS.Timeout>>({})
+
   // ── Pagination helpers ─────────────────────────────────────────────────────
   const getItemsPerPage = () => {
     if (typeof window === 'undefined') return 8
@@ -122,24 +290,7 @@ const MenuMaster = () => {
       toast.error('Failed to update status')
     }
   }
-  const formatTime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600)
 
-    const minutes = Math.floor((seconds % 3600) / 60)
-
-    const secs = seconds % 60
-
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-  }
-
-  const handleCounter = (id: string) => {
-    setInterval(() => {
-      setCounter((prev) => ({
-        ...prev,
-        [id]: (prev[id] || 0) + 1,
-      }))
-    }, 1000)
-  }
   // ── Pagination ─────────────────────────────────────────────────────────────
   const currentItems = searchMenuMaster.slice(0, visibleCount)
   const hasMore = visibleCount < searchMenuMaster.length
@@ -240,145 +391,9 @@ const MenuMaster = () => {
             <CardBody>
               <div className="row g-4">
                 {currentItems?.length > 0 ? (
-                  currentItems.map((item: IMenuMaster) => {
-                    const isThisItemReady = item.status === 'ready'
-                    const isAudioItem = readyItemId === item._id
-
-                    return (
-                      <div key={item._id} className="col-12 col-sm-6 col-lg-4 col-xl-3">
-                        <div
-                          className={`card border-0 shadow-sm h-100 rounded-4 overflow-hidden menu-card ${isThisItemReady ? 'ready-card-glow' : ''}`}>
-                          {/* Image */}
-                          <div className="position-relative">
-                            {item.image ? (
-                              <Image
-                                src={item.image || '/images/no-image.png'}
-                                alt={item.itemName}
-                                width={500}
-                                height={250}
-                                className="w-100"
-                                style={{ height: '120px', objectFit: 'fill' }}
-                              />
-                            ) : (
-                              <Image
-                                src={defaultImg}
-                                alt="no img"
-                                width={500}
-                                height={150}
-                                className="w-100"
-                                style={{ height: '120px', objectFit: 'contain' }}
-                              />
-                            )}
-
-                            {/* Priority badge */}
-                            <span
-                              className={`badge position-absolute top-0 end-0 m-3 px-3 py-1 ${
-                                item.priority === 'critical'
-                                  ? 'bg-danger'
-                                  : item.priority === 'high'
-                                    ? 'bg-warning text-dark'
-                                    : item.priority === 'medium'
-                                      ? 'bg-info'
-                                      : 'bg-success'
-                              }`}>
-                              {item.priority}
-                            </span>
-
-                            {/* Ready ribbon */}
-                            {isThisItemReady && <div className="ready-ribbon">✅ READY</div>}
-                          </div>
-
-                          {/* Card body */}
-                          <div className="card-body p-2 d-flex flex-column">
-                            <div className="mb-2">
-                              <h4 className="fw-bold mb-0 pt-2 pb-1 text-truncate">{item.itemName}</h4>
-                            </div>
-
-                            <p className="text-muted small mb-2">{item.desc.slice(0, 100) || 'No description available'}</p>
-
-                            <hr className="my-0 opacity-25" />
-
-                            {/* Qty + Status */}
-                            <div className="d-flex justify-content-between align-items-center py-1">
-                              <div className="d-flex align-items-center gap-1">
-                                <IconifyIcon icon="solar:box-bold-duotone" className="text-warning fs-5" />
-                                <span className="fw-semibold small">Qty: {item.qty}</span>
-                                <span className="fw-semibold small">Timer: {formatTime(counter[item._id] || 0)}</span>
-                              </div>
-                              {item.status ? (
-                                <Badge
-                                  bg={
-                                    item.status === 'ready'
-                                      ? 'success'
-                                      : item.status === 'prepare'
-                                        ? 'warning'
-                                        : item.status === 'seen'
-                                          ? 'info'
-                                          : 'secondary'
-                                  }
-                                  className="rounded-pill px-2 py-2 text-capitalize">
-                                  {item.status}
-                                </Badge>
-                              ) : (
-                                <Badge bg="secondary" className="rounded-pill px-4 py-2 text-capitalize">
-                                  Status
-                                </Badge>
-                              )}
-                            </div>
-
-                            <hr className="my-0 opacity-25" />
-
-                            {/* Actions */}
-                            <div className="mt-auto d-flex gap-2">
-                              {/* Bell — send notification */}
-                              {item.status === 'ready' ? (
-                                <button className="btn flex-fill position-relative btn-soft-primary" onClick={() => handleNotification(item)}>
-                                  <span className="preparing-badge" style={{ background: '#0d6efd' }}>
-                                    RESEND
-                                  </span>
-                                  <IconifyIcon icon="solar:refresh-bold-duotone" className="fs-5" />
-                                </button>
-                              ) : (
-                                <button
-                                  className={`btn flex-fill position-relative ${item.status === 'prepare' ? 'bell-btn-preparing' : 'btn-soft-success'}`}
-                                  onClick={() => {
-                                    ;(handleNotification(item), handleCounter(item._id))
-                                  }}>
-                                  {item.status === 'prepare' && <span className="preparing-badge">PREPARING</span>}
-                                  <IconifyIcon icon="solar:bell-bold-duotone" className={`fs-5 ${item.status === 'prepare' ? 'bell-blink' : ''}`} />
-                                </button>
-                              )}
-
-                              {/* Edit */}
-                              <EditMenuMaster item={item} />
-
-                              {/* Delete */}
-                              <button className="btn btn-soft-danger flex-fill" onClick={() => handleDelete(item._id)}>
-                                <IconifyIcon icon="solar:trash-bin-minimalistic-2-broken" className="fs-5" />
-                              </button>
-
-                              {/* 
-                                Seen btn:
-                                - Enabled only when status === 'ready'
-                                - Stops audio + marks item as 'seen' in DB
-                                - Pulses when it's the item that triggered audio
-                              */}
-                              <button
-                                type="button"
-                                disabled={item.status !== 'ready'}
-                                onClick={() => handleSeen(item)}
-                                className={`btn d-flex align-items-center gap-1 ${
-                                  item.status === 'ready' ? 'btn-secondary' : isThisItemReady ? 'btn-success seen-pulse' : 'btn-outline-secondary'
-                                }`}>
-                                <IconifyIcon icon="solar:eye-bold" />
-                                {item.status === 'seen' ? 'Seen ✓' : 'Seen'}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })
+                  currentItems.map((item: IMenuMaster) => (
+                    <MenuMasterCard key={item._id} item={item} onNotify={handleNotification} onDelete={handleDelete} onSeen={handleSeen} />
+                  ))
                 ) : (
                   <div className="col-12">
                     <div className="card border-0 shadow-sm rounded-4">

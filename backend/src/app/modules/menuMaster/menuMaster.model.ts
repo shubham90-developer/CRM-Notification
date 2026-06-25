@@ -36,6 +36,15 @@ const menuMasterSchema: Schema = new Schema(
       enum: ["pending", "seen", "prepare", "ready"],
       default: "pending",
     },
+    bellStartedAt: {
+      type: Date,
+      default: null,
+    },
+
+    readyAt: {
+      type: Date,
+      default: null,
+    },
 
     isDeleted: {
       type: Boolean,

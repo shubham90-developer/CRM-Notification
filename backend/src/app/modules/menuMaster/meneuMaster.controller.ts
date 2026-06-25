@@ -252,9 +252,36 @@ export const updateMenuStatus = async (
       return next(new appError("Invalid status value", 400));
     }
 
+    const existingMenu = await MenuMaster.findOne({
+      _id: id,
+      isDeleted: false,
+    });
+
+    if (!existingMenu) {
+      return next(new appError("Menu not found", 404));
+    }
+
+    const updatePayload: any = { status };
+
+    // Bell click → kitchen starts preparing → start the timer (only once)
+    if (status === "prepare" && !existingMenu.bellStartedAt) {
+      updatePayload.bellStartedAt = new Date();
+    }
+
+    // Order ready → stop the timer
+    if (status === "ready") {
+      updatePayload.readyAt = new Date();
+    }
+
+    // Bell re-sent (resend / re-notify) → reset timer for a fresh cycle
+    if (status === "pending") {
+      updatePayload.bellStartedAt = null;
+      updatePayload.readyAt = null;
+    }
+
     const menu = await MenuMaster.findOneAndUpdate(
       { _id: id, isDeleted: false },
-      { status },
+      updatePayload,
       { new: true },
     );
 
@@ -272,13 +299,13 @@ export const updateMenuStatus = async (
         desc: menu.desc,
       });
     }
-    if (status === "ready") {
-      io.to("kitchen-room").emit("menu-status-updated", {
-        _id: menu._id,
-        itemName: menu.itemName,
-        status: "ready",
-      });
-    }
+    io.to("kitchen-room").emit("menu-status-updated", {
+      _id: menu._id,
+      itemName: menu.itemName,
+      status: menu.status,
+      bellStartedAt: menu.bellStartedAt,
+      readyAt: menu.readyAt,
+    });
     io.to("menu-master-room").emit("ready-notification", {
       _id: menu._id,
       itemName: menu.itemName,
@@ -286,7 +313,12 @@ export const updateMenuStatus = async (
     });
 
     // NEW: global broadcast for anyone else watching (e.g. Admin Menu Master list)
-    io.emit("menu-list-updated", { _id: menu._id, status: menu.status });
+    io.emit("menu-list-updated", {
+      _id: menu._id,
+      status: menu.status,
+      bellStartedAt: menu.bellStartedAt,
+      readyAt: menu.readyAt,
+    });
 
     res.status(200).json({
       success: true,

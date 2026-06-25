@@ -10,6 +10,8 @@ export interface IMenuMaster {
   qty: string
   status: string
   isDeleted: boolean
+  bellStartedAt: string | null
+  readyAt: string | null
   createdAt: string
   updatedAt: string
 }

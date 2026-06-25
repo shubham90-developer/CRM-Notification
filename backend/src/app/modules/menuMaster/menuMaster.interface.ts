@@ -6,6 +6,8 @@ export interface IMenuMaster extends Document {
   image: string;
   desc: string;
   priority: string;
+  bellStartedAt: Date;
+  readyAt: Date;
   qty: string;
   isDeleted: boolean;
   createdAt: Date;
