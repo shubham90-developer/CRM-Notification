@@ -113,10 +113,12 @@ const MenuMasterCard = ({ item, onNotify, onDelete, onSeen }: MenuMasterCardProp
             <div className="d-flex align-items-center gap-2">
               <IconifyIcon icon="solar:box-bold-duotone" className="text-warning fs-5" />
               <span className="fw-semibold small">Qty: {item.qty}</span>
-              <span className="fw-semibold small d-flex align-items-center gap-1">
+            </div>
+            <div>
+              <Badge className="fw-semibold bg-light text-dark font-bold medium d-flex align-items-center justify-content-center gap-1 rounded-pill px-2 py-2">
                 <IconifyIcon icon="solar:clock-circle-bold" className="text-secondary" />
                 {formatTime(elapsedSeconds)}
-              </span>
+              </Badge>
             </div>
             {item.status ? (
               <Badge

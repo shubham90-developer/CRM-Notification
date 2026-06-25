@@ -23,7 +23,7 @@ const getRoleRedirect = (role: string): string => {
       return '/menu-category'
     case 'kitchen_master':
       return '/notifications'
-    case 'reception_master':
+    case 'Manager':
       return '/reciptionist'
     default:
       return '/menu-category'

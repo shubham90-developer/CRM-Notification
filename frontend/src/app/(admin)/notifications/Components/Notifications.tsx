@@ -44,7 +44,7 @@ const Notifications = ({ item }: any) => {
     socket.on('new-menu-notification', (data) => {
       toast.info(`🔔 New Order: ${data.itemName}`)
       router.push(`/notifications?id=${data._id}`)
-      setNotifyKey((k) => k + 1) // forces reset even when id is unchanged (re-send)
+      setNotifyKey((k) => k + 1)
 
       if (data._id === id) {
         refetch()
@@ -71,6 +71,34 @@ const Notifications = ({ item }: any) => {
     if (data?.status) setStatus(data.status)
   }, [data?.status])
 
+  // ── Elapsed timer — starts from bellStartedAt, freezes at readyAt ─────────
+  const getElapsed = () => {
+    if (!data?.bellStartedAt) return 0
+    const start = new Date(data.bellStartedAt).getTime()
+    const end = data?.readyAt ? new Date(data.readyAt).getTime() : Date.now()
+    return Math.max(0, Math.floor((end - start) / 1000))
+  }
+
+  const [elapsedSeconds, setElapsedSeconds] = useState(getElapsed)
+
+  useEffect(() => {
+    setElapsedSeconds(getElapsed())
+
+    if (!data?.bellStartedAt || data?.readyAt) return // not started, or already stopped
+
+    const interval = setInterval(() => {
+      setElapsedSeconds(getElapsed())
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [data?.bellStartedAt, data?.readyAt])
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    const s = seconds % 60
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
   // FIX 3: set audioStopped.current = true BEFORE pausing
   const stopAudio = () => {
     audioStopped.current = true // blocks useEffect from restarting audio after refetch
@@ -153,16 +181,19 @@ const Notifications = ({ item }: any) => {
           {/* CARD */}
           <div className="food-card">
             {/* HEADER */}
-            <div className="d-flex align-items-center gap-3 mb-4">
-              <button className="back-btn" onClick={() => router.back()}>
-                <IconifyIcon icon="solar:arrow-left-linear" />
+            <div className="d-flex align-items-center gap-3 mb-2">
+              <button className="btn btn-light" onClick={() => router.back()}>
+                {/* <IconifyIcon icon="solar:arrow-left-linear" /> */}
+                <span className="tag timer-tag ">⏱ {formatTime(elapsedSeconds)}</span>
               </button>
-              <h4 className="mb-0 fw-bold">{data?.itemName}</h4>
             </div>
-
+            <div className="text-center mb-3">
+              {' '}
+              <h5 className="mb-0 fw-bold small">{data?.itemName}</h5>
+            </div>
             {/* IMAGE */}
             <div className="image-box">
-              <Image src={data?.image || product} alt={data?.itemName || 'food'} width={220} height={150} className="food-image rounded-1" />
+              <Image src={data?.image || product} alt={data?.itemName || 'food'} width={120} height={100} className="food-image rounded-1" />
             </div>
 
             {/* TAGS */}
@@ -178,6 +209,12 @@ const Notifications = ({ item }: any) => {
                 }`}>
                 🚨 {data?.priority}
               </span>
+              <span
+                className={`tag text-white  fs-6 px-3 py-2 ${
+                  status === 'ready' ? 'bg-success' : status === 'prepare' ? 'bg-warning text-dark' : status === 'seen' ? 'bg-info' : 'bg-secondary'
+                }`}>
+                👁️ {status}
+              </span>
             </div>
 
             <div className="text-center">
@@ -185,14 +222,11 @@ const Notifications = ({ item }: any) => {
             </div>
 
             {/* STATUS BADGE */}
+            <div className="text-center mb-3"></div>
+            {/* TIMER
             <div className="text-center mb-3">
-              <span
-                className={`badge fs-6 px-3 py-2 ${
-                  status === 'ready' ? 'bg-success' : status === 'prepare' ? 'bg-warning text-dark' : status === 'seen' ? 'bg-info' : 'bg-secondary'
-                }`}>
-                Status: {status}
-              </span>
-            </div>
+              <span className="badge bg-dark fs-6 px-3 py-2">⏱ {formatTime(elapsedSeconds)}</span>
+            </div> */}
 
             {/* BUTTONS — only Seen and Prepare for Kitchen Master */}
             <div className="d-flex gap-2 flex-wrap justify-content-center">

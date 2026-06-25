@@ -263,20 +263,20 @@ export const updateMenuStatus = async (
 
     const updatePayload: any = { status };
 
-    // Bell click → kitchen starts preparing → start the timer (only once)
-    if (status === "prepare" && !existingMenu.bellStartedAt) {
-      updatePayload.bellStartedAt = new Date();
+    // Bell click sends status "pending" — start the timer here, unless this
+    // is a fresh resend on an item that was already "ready" (reset for new cycle)
+    if (status === "pending") {
+      if (existingMenu.status === "ready") {
+        updatePayload.bellStartedAt = new Date();
+        updatePayload.readyAt = null;
+      } else if (!existingMenu.bellStartedAt) {
+        updatePayload.bellStartedAt = new Date();
+      }
     }
 
     // Order ready → stop the timer
     if (status === "ready") {
       updatePayload.readyAt = new Date();
-    }
-
-    // Bell re-sent (resend / re-notify) → reset timer for a fresh cycle
-    if (status === "pending") {
-      updatePayload.bellStartedAt = null;
-      updatePayload.readyAt = null;
     }
 
     const menu = await MenuMaster.findOneAndUpdate(

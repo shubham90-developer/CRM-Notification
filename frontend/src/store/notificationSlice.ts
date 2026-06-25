@@ -7,7 +7,7 @@ export interface INotification {
   priority?: string
   qty?: string
   desc?: string
-  seenAt?: string
+  status?: string
 }
 
 interface NotificationState {
@@ -25,12 +25,15 @@ const notificationSlice = createSlice({
   initialState,
   reducers: {
     addNotification: (state, action: PayloadAction<INotification>) => {
-      // avoid duplicates
       const exists = state.items.find((n) => n._id === action.payload._id)
       if (!exists) {
         state.items.unshift(action.payload)
         state.unreadCount += 1
       }
+    },
+    updateNotificationStatus: (state, action: PayloadAction<{ id: string; status: string }>) => {
+      const item = state.items.find((n) => n._id === action.payload.id)
+      if (item) item.status = action.payload.status
     },
     clearAll: (state) => {
       state.items = []
@@ -42,5 +45,5 @@ const notificationSlice = createSlice({
   },
 })
 
-export const { addNotification, clearAll, markAllRead } = notificationSlice.actions
+export const { addNotification, updateNotificationStatus, clearAll, markAllRead } = notificationSlice.actions
 export default notificationSlice.reducer
