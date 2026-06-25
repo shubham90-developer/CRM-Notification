@@ -101,8 +101,20 @@ const Notifications = ({ item }: any) => {
       stopAudio()
       await updateMenuStatus({ id, status: 'prepare' }).unwrap()
       setStatus('prepare')
-      setDismissed(true)
       toast.success('Marked as Preparing')
+    } catch {
+      toast.error('Failed to update status')
+    }
+  }
+
+  const handleReady = async () => {
+    if (!id) return
+    try {
+      stopAudio()
+      await updateMenuStatus({ id, status: 'ready' }).unwrap()
+      setStatus('ready')
+      setDismissed(true)
+      toast.success('Order marked as Ready!')
     } catch {
       toast.error('Failed to update status')
     }
@@ -192,6 +204,11 @@ const Notifications = ({ item }: any) => {
               <button type="button" disabled={status !== 'seen'} onClick={handlePrepare} className="btn btn-warning d-flex align-items-center gap-1">
                 <IconifyIcon icon="solar:chef-hat-bold" />
                 {status === 'prepare' || status === 'ready' ? 'Preparing ✓' : 'Prepare'}
+              </button>
+
+              <button type="button" disabled={status !== 'prepare'} onClick={handleReady} className="btn btn-success d-flex align-items-center gap-1">
+                <IconifyIcon icon="solar:check-circle-bold" />
+                {status === 'ready' ? 'Ready ✓' : 'Mark Ready'}
               </button>
             </div>
           </div>

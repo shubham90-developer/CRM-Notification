@@ -279,6 +279,11 @@ export const updateMenuStatus = async (
         status: "ready",
       });
     }
+    io.to("menu-master-room").emit("ready-notification", {
+      _id: menu._id,
+      itemName: menu.itemName,
+      status: "ready",
+    });
 
     // NEW: global broadcast for anyone else watching (e.g. Admin Menu Master list)
     io.emit("menu-list-updated", { _id: menu._id, status: menu.status });

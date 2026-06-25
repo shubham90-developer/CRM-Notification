@@ -36,6 +36,11 @@ io.on("connection", (socket) => {
     console.log("Receptionist joined reception-room");
   });
 
+  socket.on("join-menu-master", () => {
+    socket.join("menu-master-room");
+    console.log("Menu master joined menu-master-room");
+  });
+
   socket.on("menu-master-notify", (data) => {
     console.log("Menu Master triggered notification for:", data.itemName);
     io.to("kitchen-room").emit("new-menu-notification", data);

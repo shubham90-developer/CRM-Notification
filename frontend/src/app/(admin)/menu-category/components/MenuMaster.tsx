@@ -1,24 +1,35 @@
 'use client'
 
 import IconifyIcon from '@/components/wrappers/IconifyIcon'
-import product from '../../../../assets/images/products/i1.jpg'
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Badge, Card, CardBody, CardFooter, CardTitle, Col, Row } from 'react-bootstrap'
 
 import AddMenuMaster from './AddMenuMaster'
 import EditMenuMaster from './EditMenuMaster'
 import Image from 'next/image'
 import { IMenuMaster, useDeleteMenuMasterByIdMutation, useGetMenuMasterQuery, useUpdateMenuStatusMutation } from '@/store/menuMasterApi'
+import { useGetSettingsQuery } from '@/store/settingApi'
 import { toast } from 'react-toastify'
 import Swal from 'sweetalert2'
 import defaultImg from '../../../../assets/images/no-img.png'
 import { useRouter } from 'next/navigation'
 import socket from '@/lib/socket'
-import { useEffect } from 'react'
 
 const MenuMaster = () => {
   const router = useRouter()
   const [search, setSearch] = React.useState('')
+
+  // ── Audio refs & state ─────────────────────────────────────────────────────
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioStopped = useRef(false)
+  // Tracks which item _id triggered the ready audio — so Seen only stops
+  // audio for that specific item, not unrelated ones
+  const [readyItemId, setReadyItemId] = useState<string | null>(null)
+  const [audioPlaying, setAudioPlaying] = useState(false)
+  const { data: settings } = useGetSettingsQuery()
+  const [counter, setCounter] = useState<Record<string, number>>({})
+  const intervals = useRef<Record<string, NodeJS.Timeout>>({})
+  // ── Pagination helpers ─────────────────────────────────────────────────────
   const getItemsPerPage = () => {
     if (typeof window === 'undefined') return 8
     const width = window.innerWidth
@@ -33,21 +44,55 @@ const MenuMaster = () => {
 
   const { data: menuMaster = [], isLoading, isError, refetch } = useGetMenuMasterQuery()
 
-  // Reset visibleCount when screen size changes
   React.useEffect(() => {
     const handleResize = () => setVisibleCount(getItemsPerPage())
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
   const [deleteMenuMaster] = useDeleteMenuMasterByIdMutation()
   const [updateMenuStatus] = useUpdateMenuStatusMutation()
-  // search
-  const searchMenuMaster = menuMaster.filter((item: IMenuMaster) => {
-    return item.itemName.toLowerCase().includes(search.toLowerCase())
-  })
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  const searchMenuMaster = menuMaster.filter((item: IMenuMaster) => item.itemName.toLowerCase().includes(search.toLowerCase()))
+
+  // ── Reload audio element when settings URL changes ─────────────────────────
   useEffect(() => {
-    socket.on('menu-list-updated', () => {
+    if (audioRef.current && settings?.notificationAudio) {
+      audioRef.current.load()
+    }
+  }, [settings?.notificationAudio])
+
+  // ── Socket listeners ───────────────────────────────────────────────────────
+  useEffect(() => {
+    // menu-list-updated fires on every status change with { _id, status }
+    socket.on('menu-list-updated', (data: { _id: string; status: string }) => {
       refetch()
+
+      // Only react to "ready" status
+      if (data?.status === 'ready') {
+        audioStopped.current = false
+        setReadyItemId(data._id)
+
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0
+          audioRef.current.volume = 0.6
+          audioRef.current
+            .play()
+            .then(() => setAudioPlaying(true))
+            .catch(() => {
+              // Browser autoplay policy — retry once after 500ms
+              setTimeout(() => {
+                if (!audioStopped.current) {
+                  audioRef.current
+                    ?.play()
+                    .then(() => setAudioPlaying(true))
+                    .catch(() => console.log('Audio blocked by browser'))
+                }
+              }, 500)
+            })
+        }
+      }
     })
 
     return () => {
@@ -55,10 +100,51 @@ const MenuMaster = () => {
     }
   }, [refetch])
 
-  // pagniation
+  // ── Stop audio (shared helper) ─────────────────────────────────────────────
+  const stopAudio = () => {
+    audioStopped.current = true
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+    setAudioPlaying(false)
+    setReadyItemId(null)
+  }
+
+  // ── Seen handler — stops audio + marks item seen in DB ────────────────────
+  const handleSeen = async (item: IMenuMaster) => {
+    // Stop audio immediately (sync) before any async work
+    stopAudio()
+
+    try {
+      toast.success(`👁 ${item.itemName} marked as Seen`)
+    } catch {
+      toast.error('Failed to update status')
+    }
+  }
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+
+    const minutes = Math.floor((seconds % 3600) / 60)
+
+    const secs = seconds % 60
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  }
+
+  const handleCounter = (id: string) => {
+    setInterval(() => {
+      setCounter((prev) => ({
+        ...prev,
+        [id]: (prev[id] || 0) + 1,
+      }))
+    }, 1000)
+  }
+  // ── Pagination ─────────────────────────────────────────────────────────────
   const currentItems = searchMenuMaster.slice(0, visibleCount)
   const hasMore = visibleCount < searchMenuMaster.length
-  // handle delete
+
+  // ── Delete ─────────────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
     const result = await Swal.fire({
       title: 'Are you sure?',
@@ -73,15 +159,15 @@ const MenuMaster = () => {
 
     try {
       await deleteMenuMaster(id).unwrap()
-      toast.success('Function deleted successfully')
-    } catch (error) {
+      toast.success('Menu deleted successfully')
+    } catch {
       toast.error('Something went wrong')
     }
   }
 
+  // ── Send notification to Kitchen / Reception ───────────────────────────────
   const handleNotification = async (item: IMenuMaster) => {
     try {
-      // Reset status to pending every time — covers both first send and re-send
       await updateMenuStatus({ id: item._id, status: 'pending' }).unwrap()
     } catch {
       toast.error('Failed to reset order status')
@@ -100,8 +186,30 @@ const MenuMaster = () => {
 
   if (isLoading) return <div>Loading...</div>
   if (isError) return <div>Error</div>
+
   return (
     <>
+      {/* Hidden audio — same notification sound from Settings */}
+      <audio ref={audioRef} loop>
+        <source src={settings?.notificationAudio || ''} type="audio/mpeg" />
+      </audio>
+
+      {/* ── Ready audio banner — visible only while audio is playing ────────── */}
+      {audioPlaying && readyItemId && (
+        <div className="ready-alert-banner mb-3">
+          <div className="ready-alert-left">
+            <div className="ready-pulse-dot" />
+            <div>
+              <p className="ready-alert-title">✅ Order is Ready!</p>
+              <p className="ready-alert-sub">
+                <strong>{menuMaster.find((m: IMenuMaster) => m._id === readyItemId)?.itemName || 'Order'}</strong> तयार आहे! खालील कार्डवर{' '}
+                <strong>Seen</strong> क्लिक करा व ऑडिओ थांबवा.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Row>
         <Col xl={12}>
           <Card className="border-0 shadow-sm rounded-4 overflow-hidden">
@@ -113,7 +221,7 @@ const MenuMaster = () => {
                 </CardTitle>
               </div>
               <div className="d-flex gap-2 align-items-center">
-                {/* SEARCH */}
+                {/* Search */}
                 <div className="position-relative ms-2 d-none d-md-block">
                   <input
                     type="search"
@@ -123,7 +231,6 @@ const MenuMaster = () => {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
-
                   <IconifyIcon icon="solar:magnifer-linear" className="position-absolute top-50 start-0 translate-middle-y ms-2 text-muted" />
                 </div>
                 <AddMenuMaster />
@@ -133,114 +240,145 @@ const MenuMaster = () => {
             <CardBody>
               <div className="row g-4">
                 {currentItems?.length > 0 ? (
-                  currentItems.map((item: IMenuMaster, index: number) => (
-                    <div key={item._id} className="col-12 col-sm-6 col-lg-4 col-xl-3">
-                      <div className="card border-0 shadow-sm h-100 rounded-4 overflow-hidden menu-card">
-                        {/* Image */}
-                        <div className="position-relative">
-                          {item.image ? (
-                            <Image
-                              src={item.image || '/images/no-image.png'}
-                              alt={item.itemName}
-                              width={500}
-                              height={250}
-                              className="w-100"
-                              style={{
-                                height: '120px',
-                                objectFit: 'fill',
-                              }}
-                            />
-                          ) : (
-                            <Image
-                              src={defaultImg}
-                              alt={'no img'}
-                              width={500}
-                              height={150}
-                              className="w-100"
-                              style={{
-                                height: '120px',
-                                objectFit: 'contain',
-                              }}
-                            />
-                          )}
+                  currentItems.map((item: IMenuMaster) => {
+                    const isThisItemReady = item.status === 'ready'
+                    const isAudioItem = readyItemId === item._id
 
-                          {/* Priority */}
-                          <span
-                            className={`badge position-absolute top-0 end-0 m-3 px-3 py-1 ${
-                              item.priority === 'critical'
-                                ? 'bg-danger'
-                                : item.priority === 'high'
-                                  ? 'bg-warning text-dark'
-                                  : item.priority === 'medium'
-                                    ? 'bg-info'
-                                    : 'bg-success'
-                            }`}>
-                            {item.priority}
-                          </span>
-                        </div>
-
-                        {/* Content */}
-                        <div className="card-body p-2 d-flex flex-column">
-                          {/* Title */}
-                          <div className="mb-2">
-                            <h4 className="fw-bold mb-0 pt-2 pb-1 text-truncate">{item.itemName}</h4>
-                          </div>
-
-                          {/* Description */}
-                          <p className="text-muted small mb-2">{item.desc.slice(0, 100) || 'No description available'}</p>
-
-                          {/* Divider */}
-                          <hr className="my-0 opacity-25" />
-
-                          {/* Qty + Status */}
-                          <div className="d-flex justify-content-between align-items-center py-1">
-                            <div className="d-flex align-items-center gap-1">
-                              <IconifyIcon icon="solar:box-bold-duotone" className="text-warning fs-5" />
-                              <span className="fw-semibold small">Qty: {item.qty}</span>
-                            </div>
-                            {item.status ? (
-                              <Badge
-                                bg={
-                                  item.status === 'ready'
-                                    ? 'success'
-                                    : item.status === 'prepare'
-                                      ? 'warning'
-                                      : item.status === 'seen'
-                                        ? 'info'
-                                        : 'secondary'
-                                }
-                                className="rounded-pill px-2 py-2 text-capitalize">
-                                {item.status}
-                              </Badge>
+                    return (
+                      <div key={item._id} className="col-12 col-sm-6 col-lg-4 col-xl-3">
+                        <div
+                          className={`card border-0 shadow-sm h-100 rounded-4 overflow-hidden menu-card ${isThisItemReady ? 'ready-card-glow' : ''}`}>
+                          {/* Image */}
+                          <div className="position-relative">
+                            {item.image ? (
+                              <Image
+                                src={item.image || '/images/no-image.png'}
+                                alt={item.itemName}
+                                width={500}
+                                height={250}
+                                className="w-100"
+                                style={{ height: '120px', objectFit: 'fill' }}
+                              />
                             ) : (
-                              <Badge bg="secondary" className="rounded-pill px-4 py-2 text-capitalize">
-                                Status
-                              </Badge>
+                              <Image
+                                src={defaultImg}
+                                alt="no img"
+                                width={500}
+                                height={150}
+                                className="w-100"
+                                style={{ height: '120px', objectFit: 'contain' }}
+                              />
                             )}
+
+                            {/* Priority badge */}
+                            <span
+                              className={`badge position-absolute top-0 end-0 m-3 px-3 py-1 ${
+                                item.priority === 'critical'
+                                  ? 'bg-danger'
+                                  : item.priority === 'high'
+                                    ? 'bg-warning text-dark'
+                                    : item.priority === 'medium'
+                                      ? 'bg-info'
+                                      : 'bg-success'
+                              }`}>
+                              {item.priority}
+                            </span>
+
+                            {/* Ready ribbon */}
+                            {isThisItemReady && <div className="ready-ribbon">✅ READY</div>}
                           </div>
 
-                          {/* Divider */}
-                          <hr className="my-0 opacity-25" />
+                          {/* Card body */}
+                          <div className="card-body p-2 d-flex flex-column">
+                            <div className="mb-2">
+                              <h4 className="fw-bold mb-0 pt-2 pb-1 text-truncate">{item.itemName}</h4>
+                            </div>
 
-                          {/* Actions */}
-                          <div className="mt-auto d-flex gap-2">
-                            <button
-                              className={`btn flex-fill position-relative ${item.status === 'prepare' ? 'bell-btn-preparing' : 'btn-soft-success'}`}
-                              onClick={() => handleNotification(item)}>
-                              {item.status === 'prepare' && <span className="preparing-badge">PREPARING</span>}
-                              <IconifyIcon icon="solar:bell-bold-duotone" className={`fs-5 ${item.status === 'prepare' ? 'bell-blink' : ''}`} />
-                            </button>
+                            <p className="text-muted small mb-2">{item.desc.slice(0, 100) || 'No description available'}</p>
 
-                            <EditMenuMaster item={item} />
+                            <hr className="my-0 opacity-25" />
 
-                            <button className="btn btn-soft-danger flex-fill" onClick={() => handleDelete(item._id)}>
-                              <IconifyIcon icon="solar:trash-bin-minimalistic-2-broken" className="fs-5" />
-                            </button>
+                            {/* Qty + Status */}
+                            <div className="d-flex justify-content-between align-items-center py-1">
+                              <div className="d-flex align-items-center gap-1">
+                                <IconifyIcon icon="solar:box-bold-duotone" className="text-warning fs-5" />
+                                <span className="fw-semibold small">Qty: {item.qty}</span>
+                                <span className="fw-semibold small">Timer: {formatTime(counter[item._id] || 0)}</span>
+                              </div>
+                              {item.status ? (
+                                <Badge
+                                  bg={
+                                    item.status === 'ready'
+                                      ? 'success'
+                                      : item.status === 'prepare'
+                                        ? 'warning'
+                                        : item.status === 'seen'
+                                          ? 'info'
+                                          : 'secondary'
+                                  }
+                                  className="rounded-pill px-2 py-2 text-capitalize">
+                                  {item.status}
+                                </Badge>
+                              ) : (
+                                <Badge bg="secondary" className="rounded-pill px-4 py-2 text-capitalize">
+                                  Status
+                                </Badge>
+                              )}
+                            </div>
+
+                            <hr className="my-0 opacity-25" />
+
+                            {/* Actions */}
+                            <div className="mt-auto d-flex gap-2">
+                              {/* Bell — send notification */}
+                              {item.status === 'ready' ? (
+                                <button className="btn flex-fill position-relative btn-soft-primary" onClick={() => handleNotification(item)}>
+                                  <span className="preparing-badge" style={{ background: '#0d6efd' }}>
+                                    RESEND
+                                  </span>
+                                  <IconifyIcon icon="solar:refresh-bold-duotone" className="fs-5" />
+                                </button>
+                              ) : (
+                                <button
+                                  className={`btn flex-fill position-relative ${item.status === 'prepare' ? 'bell-btn-preparing' : 'btn-soft-success'}`}
+                                  onClick={() => {
+                                    ;(handleNotification(item), handleCounter(item._id))
+                                  }}>
+                                  {item.status === 'prepare' && <span className="preparing-badge">PREPARING</span>}
+                                  <IconifyIcon icon="solar:bell-bold-duotone" className={`fs-5 ${item.status === 'prepare' ? 'bell-blink' : ''}`} />
+                                </button>
+                              )}
+
+                              {/* Edit */}
+                              <EditMenuMaster item={item} />
+
+                              {/* Delete */}
+                              <button className="btn btn-soft-danger flex-fill" onClick={() => handleDelete(item._id)}>
+                                <IconifyIcon icon="solar:trash-bin-minimalistic-2-broken" className="fs-5" />
+                              </button>
+
+                              {/* 
+                                Seen btn:
+                                - Enabled only when status === 'ready'
+                                - Stops audio + marks item as 'seen' in DB
+                                - Pulses when it's the item that triggered audio
+                              */}
+                              <button
+                                type="button"
+                                disabled={item.status !== 'ready'}
+                                onClick={() => handleSeen(item)}
+                                className={`btn d-flex align-items-center gap-1 ${
+                                  item.status === 'ready' ? 'btn-secondary' : isThisItemReady ? 'btn-success seen-pulse' : 'btn-outline-secondary'
+                                }`}>
+                                <IconifyIcon icon="solar:eye-bold" />
+                                {item.status === 'seen' ? 'Seen ✓' : 'Seen'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 ) : (
                   <div className="col-12">
                     <div className="card border-0 shadow-sm rounded-4">
@@ -265,7 +403,9 @@ const MenuMaster = () => {
           </Card>
         </Col>
       </Row>
+
       <style>{`
+        /* ── Existing ───────────────────────────────────────────────────────── */
         @keyframes bellRing {
           0%   { transform: rotate(0deg); }
           10%  { transform: rotate(18deg); }
@@ -316,6 +456,93 @@ const MenuMaster = () => {
           white-space: nowrap;
           animation: badgePop 1s ease-in-out infinite;
           letter-spacing: 0.3px;
+        }
+
+        /* ── Ready card glow ────────────────────────────────────────────────── */
+        @keyframes readyGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.45); }
+          50%       { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+        }
+
+        .ready-card-glow {
+          animation: readyGlow 2s ease-in-out infinite;
+          border: 1.5px solid #28a745 !important;
+        }
+
+        /* ── Ready ribbon on image ──────────────────────────────────────────── */
+        .ready-ribbon {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          background: rgba(40, 167, 69, 0.88);
+          color: #fff;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.6px;
+          text-align: center;
+          padding: 3px 0;
+        }
+
+        /* ── Seen button pulse when item is ready ───────────────────────────── */
+        @keyframes seenPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.55); }
+          50%       { box-shadow: 0 0 0 7px rgba(40, 167, 69, 0); }
+        }
+
+        .seen-pulse {
+          animation: seenPulse 1.2s ease-in-out infinite;
+        }
+
+        /* ── Alert banner ───────────────────────────────────────────────────── */
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulseDot {
+          0%, 100% { transform: scale(1);   opacity: 1; }
+          50%       { transform: scale(1.5); opacity: 0.5; }
+        }
+
+        .ready-alert-banner {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 20px;
+          background: linear-gradient(135deg, #d4edda, #c3e6cb);
+          border: 1.5px solid #28a745;
+          border-radius: 16px;
+          box-shadow: 0 4px 18px rgba(40, 167, 69, 0.18);
+          animation: slideDown 0.3s ease;
+        }
+
+        .ready-alert-left {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .ready-pulse-dot {
+          width: 13px;
+          height: 13px;
+          border-radius: 50%;
+          background: #28a745;
+          flex-shrink: 0;
+          animation: pulseDot 1.2s ease-in-out infinite;
+        }
+
+        .ready-alert-title {
+          margin: 0;
+          font-weight: 700;
+          color: #155724;
+          font-size: 15px;
+        }
+
+        .ready-alert-sub {
+          margin: 2px 0 0;
+          font-size: 13px;
+          color: #155724;
         }
       `}</style>
     </>
