@@ -57,7 +57,7 @@ const AuthProtectionWrapper = ({ children }: { children: React.ReactNode }) => {
       }
 
       // Reception master should not access menu-category or settings or notifications
-      if (role === 'reception_master' && (pathname === '/menu-category' || pathname === '/settings' || pathname === '/notifications')) {
+      if (role === 'Manager' && (pathname === '/menu-category' || pathname === '/settings' || pathname === '/notifications')) {
         router.replace('/reciptionist')
         return
       }

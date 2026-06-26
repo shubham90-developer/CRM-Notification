@@ -32,7 +32,7 @@ const LeftSideBarToggle = () => {
     }
   }, [pathname])
 
-  if (role === 'kitchen_master' || role === 'reception_master') return null
+  if (role === 'kitchen_master' || role === 'Manager') return null
 
   return (
     <div className="topbar-item">
