@@ -42,8 +42,12 @@ const notificationSlice = createSlice({
     markAllRead: (state) => {
       state.unreadCount = 0
     },
+    removeNotification: (state, action: PayloadAction<string>) => {
+      state.items = state.items.filter((n) => n._id !== action.payload)
+      if (state.unreadCount > 0) state.unreadCount -= 1
+    },
   },
 })
 
-export const { addNotification, updateNotificationStatus, clearAll, markAllRead } = notificationSlice.actions
+export const { addNotification, updateNotificationStatus, clearAll, markAllRead, removeNotification } = notificationSlice.actions
 export default notificationSlice.reducer
