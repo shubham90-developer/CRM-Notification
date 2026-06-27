@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import IconifyIcon from '@/components/wrappers/IconifyIcon'
 import { toast } from 'react-toastify'
 import { useCreateMenuMasterMutation } from '@/store/menuMasterApi'
-
+import { useRouter } from 'next/navigation'
 const AddMenuMaster = () => {
   const [open, setOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -15,7 +15,7 @@ const AddMenuMaster = () => {
   const [image, setImage] = useState<File | null>(null)
   // api
   const [createMenuMaster, { isLoading }] = useCreateMenuMasterMutation()
-
+  const router = useRouter()
   // handlechange
   const handleChange = (e: React.ChangeEvent<HTMLInputElement> | React.ChangeEvent<HTMLSelectElement> | React.ChangeEvent<HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -68,6 +68,10 @@ const AddMenuMaster = () => {
       <button className="btn btn-sm btn-primary d-flex align-items-center" onClick={() => setOpen(true)}>
         <IconifyIcon width={16} height={16} className="me-1" icon="bx:plus" />
         Add Menu
+      </button>
+      <button className="btn btn-sm btn-primary d-flex align-items-center" onClick={() => router.push('/settings')}>
+        <IconifyIcon width={16} height={16} className="me-1" icon="bx:cog" />
+        Settings
       </button>
 
       {/* BACKDROP */}

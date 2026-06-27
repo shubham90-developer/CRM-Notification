@@ -83,7 +83,7 @@ export const menuMasterApi = createApi({
         body: { status },
       }),
       transformResponse: (response: IMenuMasterResponse) => response.data as IMenuMaster,
-      invalidatesTags: ['MenuMaster'],
+      invalidatesTags: (result, error, { id }) => ['MenuMaster', { type: 'MenuMaster', id }],
     }),
 
     deleteMenuMasterById: builder.mutation<IMenuMaster, string>({

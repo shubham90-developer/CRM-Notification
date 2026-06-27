@@ -27,9 +27,11 @@ interface MenuMasterCardProps {
   onNotify: (item: IMenuMaster) => void
   onDelete: (id: string) => void
   onSeen: (item: IMenuMaster) => void
+  isSeen: boolean
 }
 
-const MenuMasterCard = ({ item, onNotify, onDelete, onSeen }: MenuMasterCardProps) => {
+// Make sure isSeen is destructured
+const MenuMasterCard = ({ item, onNotify, onDelete, onSeen, isSeen }: MenuMasterCardProps) => {
   const isThisItemReady = item.status === 'ready'
 
   // ── Inline timer logic ──────────────────────────────────────────────────
@@ -151,16 +153,18 @@ const MenuMasterCard = ({ item, onNotify, onDelete, onSeen }: MenuMasterCardProp
               </button>
             )}
 
-            <button
-              type="button"
-              disabled={item.status !== 'ready'}
-              onClick={() => onSeen(item)}
-              className={`btn flex-fill d-flex align-items-center justify-content-center gap-1 ${
-                item.status === 'ready' ? 'btn-secondary' : isThisItemReady ? 'btn-success seen-pulse' : 'btn-outline-secondary'
-              }`}>
-              <IconifyIcon icon="solar:eye-bold" />
-              {item.status === 'seen' ? 'Seen ✓' : 'Seen'}
-            </button>
+            {item.status === 'ready' && !isSeen && (
+              <button
+                type="button"
+                disabled={isSeen}
+                onClick={() => onSeen(item)}
+                className={`btn flex-fill d-flex align-items-center justify-content-center gap-1 ${
+                  isThisItemReady ? 'btn-success seen-pulse-ready' : 'btn-outline-secondary'
+                }`}>
+                <IconifyIcon icon="solar:eye-bold" />
+                {isSeen ? 'Seen ✓' : 'Seen'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -176,9 +180,9 @@ const MenuMaster = () => {
   // ── Audio refs & state ─────────────────────────────────────────────────────
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const audioStopped = useRef(false)
-  // Tracks which item _id triggered the ready audio — so Seen only stops
-  // audio for that specific item, not unrelated ones
-  const [readyItemId, setReadyItemId] = useState<string | null>(null)
+
+  const [readyItemIds, setReadyItemIds] = useState<string[]>([])
+  const [seenItemIds, setSeenItemIds] = useState<string[]>([])
   const [audioPlaying, setAudioPlaying] = useState(false)
   const { data: settings } = useGetSettingsQuery()
 
@@ -225,25 +229,23 @@ const MenuMaster = () => {
       // Only react to "ready" status
       if (data?.status === 'ready') {
         audioStopped.current = false
-        setReadyItemId(data._id)
+        setReadyItemIds((prev) => (prev.includes(data._id) ? prev : [...prev, data._id]))
 
-        if (audioRef.current) {
-          audioRef.current.currentTime = 0
-          audioRef.current.volume = 0.6
-          audioRef.current
-            .play()
-            .then(() => setAudioPlaying(true))
-            .catch(() => {
-              // Browser autoplay policy — retry once after 500ms
+        if (data?.status === 'ready') {
+          audioStopped.current = false
+          setReadyItemIds((prev) => (prev.includes(data._id) ? prev : [...prev, data._id]))
+
+          if (audioRef.current && audioRef.current.paused) {
+            audioRef.current.currentTime = 0
+            audioRef.current.volume = 0.6
+            audioRef.current.play().catch(() => {
               setTimeout(() => {
                 if (!audioStopped.current) {
-                  audioRef.current
-                    ?.play()
-                    .then(() => setAudioPlaying(true))
-                    .catch(() => console.log('Audio blocked by browser'))
+                  audioRef.current?.play().catch(() => console.log('Audio blocked by browser'))
                 }
               }, 500)
             })
+          }
         }
       }
     })
@@ -261,15 +263,20 @@ const MenuMaster = () => {
       audioRef.current.currentTime = 0
     }
     setAudioPlaying(false)
-    setReadyItemId(null)
+    setReadyItemIds([])
   }
 
-  // ── Seen handler — stops audio + marks item seen in DB ────────────────────
   const handleSeen = async (item: IMenuMaster) => {
-    // Stop audio immediately (sync) before any async work
-    stopAudio()
-
     try {
+      await updateMenuStatus({ id: item._id, status: 'seen' }).unwrap()
+      setSeenItemIds((prev) => [...prev, item._id])
+      const remaining = readyItemIds.filter((id) => id !== item._id)
+      setReadyItemIds(remaining)
+
+      if (remaining.length === 0) {
+        stopAudio()
+      }
+
       toast.success(`👁 ${item.itemName} marked as Seen`)
     } catch {
       toast.error('Failed to update status')
@@ -309,7 +316,7 @@ const MenuMaster = () => {
       toast.error('Failed to reset order status')
       return
     }
-
+    setSeenItemIds((prev) => prev.filter((id) => id !== item._id))
     socket.emit('menu-master-notify', {
       _id: item._id,
       itemName: item.itemName,
@@ -330,16 +337,20 @@ const MenuMaster = () => {
         <source src={settings?.notificationAudio || ''} type="audio/mpeg" />
       </audio>
 
-      {/* ── Ready audio banner — visible only while audio is playing ────────── */}
-      {audioPlaying && readyItemId && (
+      {audioPlaying && readyItemIds.length > 0 && (
         <div className="ready-alert-banner mb-3">
           <div className="ready-alert-left">
             <div className="ready-pulse-dot" />
             <div>
-              <p className="ready-alert-title">✅ Order is Ready!</p>
+              <p className="ready-alert-title">✅ Orders are Ready!</p>
               <p className="ready-alert-sub">
-                <strong>{menuMaster.find((m: IMenuMaster) => m._id === readyItemId)?.itemName || 'Order'}</strong> तयार आहे! खालील कार्डवर{' '}
-                <strong>Seen</strong> क्लिक करा व ऑडिओ थांबवा.
+                <strong>
+                  {readyItemIds
+                    .map((id) => menuMaster.find((m: IMenuMaster) => m._id === id)?.itemName)
+                    .filter(Boolean)
+                    .join(', ')}
+                </strong>{' '}
+                तयार आहे! सर्व कार्डवर <strong>Seen</strong> क्लिक करा व ऑडिओ थांबवा.
               </p>
             </div>
           </div>
@@ -377,7 +388,14 @@ const MenuMaster = () => {
               <div className="row g-4">
                 {currentItems?.length > 0 ? (
                   currentItems.map((item: IMenuMaster) => (
-                    <MenuMasterCard key={item._id} item={item} onNotify={handleNotification} onDelete={handleDelete} onSeen={handleSeen} />
+                    <MenuMasterCard
+                      key={item._id}
+                      item={item}
+                      onNotify={handleNotification}
+                      onDelete={handleDelete}
+                      onSeen={handleSeen}
+                      isSeen={seenItemIds.includes(item._id)}
+                    />
                   ))
                 ) : (
                   <div className="col-12">
@@ -543,6 +561,32 @@ const MenuMaster = () => {
           margin: 2px 0 0;
           font-size: 13px;
           color: #155724;
+        }
+        @keyframes seenPulseReady {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+            transform: scale(1);
+          }
+          50% {
+            box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+            transform: scale(1.06);
+          }
+        }
+
+        @keyframes seenShake {
+          0%, 100% { transform: translateX(0); }
+          20%       { transform: translateX(-4px); }
+          40%       { transform: translateX(4px); }
+          60%       { transform: translateX(-3px); }
+          80%       { transform: translateX(3px); }
+        }
+
+        .seen-pulse-ready {
+          animation: seenPulseReady 1.2s ease-in-out infinite, seenShake 2.5s ease-in-out infinite;
+          background: #28a745 !important;
+          border-color: #28a745 !important;
+          color: white !important;
+          font-weight: 700;
         }
       `}</style>
     </>

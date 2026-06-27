@@ -5,39 +5,21 @@ import Image from 'next/image'
 import IconifyIcon from '@/components/wrappers/IconifyIcon'
 import product from '../../../../assets/images/no-img.png'
 import { useGetMenuMasterByIdQuery, useUpdateMenuStatusMutation } from '@/store/menuMasterApi'
-import { useGetSettingsQuery } from '@/store/settingApi'
 import { toast } from 'react-toastify'
 import { useDispatch } from 'react-redux'
 import { removeNotification, updateNotificationStatus } from '@/store/notificationSlice'
 
-// CHANGED: accepts id + onDismiss prop instead of item/searchParams
+// accepts id + onStopAudio callback from parent
 const NotificationCard = ({ id }: { id: string }) => {
   const dispatch = useDispatch()
-  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const { data: menuData, isLoading, isError, refetch } = useGetMenuMasterByIdQuery(id, { skip: !id })
-  const { data: settings } = useGetSettingsQuery()
+  useEffect(() => {
+    refetch()
+  }, [id])
   const [updateMenuStatus] = useUpdateMenuStatusMutation()
 
   const [status, setStatus] = useState(menuData?.status || 'pending')
-  const [audioEnabled, setAudioEnabled] = useState(true)
-  const audioStopped = useRef(false)
-
-  // Reset audio flag when id changes
-  useEffect(() => {
-    audioStopped.current = false
-  }, [id])
-
-  // Play audio on new data
-  useEffect(() => {
-    if (!menuData || !audioRef.current || audioStopped.current) return
-    audioRef.current.volume = 0.5
-    audioRef.current.play().catch(() => {
-      setTimeout(() => {
-        audioRef.current?.play().catch(() => console.log('Audio blocked'))
-      }, 500)
-    })
-  }, [menuData])
 
   // Sync status from API
   useEffect(() => {
@@ -68,18 +50,8 @@ const NotificationCard = ({ id }: { id: string }) => {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
 
-  const stopAudio = () => {
-    audioStopped.current = true
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-    }
-    setAudioEnabled(false)
-  }
-
   const handleSeen = async () => {
     try {
-      stopAudio()
       await updateMenuStatus({ id, status: 'seen' }).unwrap()
       setStatus('seen')
       dispatch(updateNotificationStatus({ id, status: 'seen' }))
@@ -91,7 +63,6 @@ const NotificationCard = ({ id }: { id: string }) => {
 
   const handlePrepare = async () => {
     try {
-      stopAudio()
       await updateMenuStatus({ id, status: 'prepare' }).unwrap()
       setStatus('prepare')
       dispatch(updateNotificationStatus({ id, status: 'prepare' }))
@@ -103,26 +74,19 @@ const NotificationCard = ({ id }: { id: string }) => {
 
   const handleReady = async () => {
     try {
-      stopAudio()
       await updateMenuStatus({ id, status: 'ready' }).unwrap()
-      dispatch(removeNotification(id)) // CHANGED: removes card from Redux instead of local dismissed state
+      dispatch(removeNotification(id))
       toast.success('Order marked as Ready!')
     } catch {
       toast.error('Failed to update status')
     }
   }
 
-  const audioSrc = settings?.notificationAudio || ''
-
   if (isLoading) return <div className="food-card text-center p-5">Loading...</div>
-  if (isError || !menuData) return null // CHANGED: don't show card if error, just remove silently
+  if (isError || !menuData) return null
 
   return (
     <>
-      <audio ref={audioRef} loop>
-        <source src={audioSrc} type="audio/mpeg" />
-      </audio>
-
       {/* CARD — exact same JSX as before, no style changes */}
       <div className="food-card">
         <div className="d-flex align-items-center gap-3 mb-2">

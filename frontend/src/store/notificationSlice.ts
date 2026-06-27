@@ -25,8 +25,10 @@ const notificationSlice = createSlice({
   initialState,
   reducers: {
     addNotification: (state, action: PayloadAction<INotification>) => {
-      const exists = state.items.find((n) => n._id === action.payload._id)
-      if (!exists) {
+      const existingIndex = state.items.findIndex((n) => n._id === action.payload._id)
+      if (existingIndex !== -1) {
+        state.items[existingIndex].status = 'pending'
+      } else {
         state.items.unshift(action.payload)
         state.unreadCount += 1
       }

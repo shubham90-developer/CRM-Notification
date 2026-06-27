@@ -14,7 +14,7 @@ const VerticalNavigationBarPage = () => {
   const user = useSelector((state: RootState) => state.auth.user)
   const role = user?.role?.toLowerCase()
 
-  if (role === 'kitchen_master' || role === 'reception_master') return null
+  if (role === 'kitchen_master' || role === 'manager' || role === 'menu_master') return null
 
   const menuItems = getMenuItems()
 

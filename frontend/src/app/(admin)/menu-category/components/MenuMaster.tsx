@@ -23,22 +23,18 @@ const formatTime = (seconds: number) => {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
 }
 
-// ── Single card — its own component so the timer hook isn't inside a .map() ──
+// ── Single card ───────────────────────────────────────────────────────────────
 interface MenuMasterCardProps {
   item: IMenuMaster
   onNotify: (item: IMenuMaster) => void
   onDelete: (id: string) => void
   onSeen: (item: IMenuMaster) => void
+  isSeen: boolean
 }
 
-const MenuMasterCard = ({ item, onNotify, onDelete, onSeen }: MenuMasterCardProps) => {
-  const isThisItemReady = item.status === 'ready'
+const MenuMasterCard = ({ item, onNotify, onDelete, onSeen, isSeen }: MenuMasterCardProps) => {
+  const isThisItemReady = item.status === 'ready' && !isSeen
 
-  // ── Inline timer logic ──────────────────────────────────────────────────
-  // Starts ticking when bellStartedAt is set (bell clicked), freezes when
-  // readyAt is set (kitchen marked it ready). Driven by real timestamps,
-  // not a client-only counter, so it survives refresh and stays in sync
-  // with the Kitchen Master card via socket-triggered refetches.
   const getElapsed = () => {
     if (!item.bellStartedAt) return 0
     const start = new Date(item.bellStartedAt).getTime()
@@ -50,17 +46,12 @@ const MenuMasterCard = ({ item, onNotify, onDelete, onSeen }: MenuMasterCardProp
 
   useEffect(() => {
     setElapsedSeconds(getElapsed())
-
-    // Not started yet, or already finished — don't run a ticking interval
     if (!item.bellStartedAt || item.readyAt) return
-
     const interval = setInterval(() => {
       setElapsedSeconds(getElapsed())
     }, 1000)
-
     return () => clearInterval(interval)
   }, [item.bellStartedAt, item.readyAt])
-  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="col-12 col-sm-6 col-lg-4 col-xl-3">
@@ -124,7 +115,7 @@ const MenuMasterCard = ({ item, onNotify, onDelete, onSeen }: MenuMasterCardProp
               <Badge
                 bg={item.status === 'ready' ? 'success' : item.status === 'prepare' ? 'warning' : item.status === 'seen' ? 'info' : 'secondary'}
                 className="rounded-pill px-2 py-2 text-capitalize">
-                {item.status}
+                {isSeen ? 'seen' : item.status}
               </Badge>
             ) : (
               <Badge bg="secondary" className="rounded-pill px-4 py-2 text-capitalize">
@@ -137,7 +128,7 @@ const MenuMasterCard = ({ item, onNotify, onDelete, onSeen }: MenuMasterCardProp
 
           {/* Actions */}
           <div className="mt-auto d-flex gap-2">
-            {/* Bell — send notification */}
+            {/* Bell / Resend */}
             {item.status === 'ready' ? (
               <button className="btn flex-fill position-relative btn-soft-primary" onClick={() => onNotify(item)}>
                 <span className="preparing-badge" style={{ background: '#0d6efd' }}>
@@ -162,22 +153,13 @@ const MenuMasterCard = ({ item, onNotify, onDelete, onSeen }: MenuMasterCardProp
               <IconifyIcon icon="solar:trash-bin-minimalistic-2-broken" className="fs-5" />
             </button>
 
-            {/* 
-              Seen btn:
-              - Enabled only when status === 'ready'
-              - Stops audio + marks item as 'seen' in DB
-              - Pulses when it's the item that triggered audio
-            */}
-            <button
-              type="button"
-              disabled={item.status !== 'ready'}
-              onClick={() => onSeen(item)}
-              className={`btn d-flex align-items-center gap-1 ${
-                item.status === 'ready' ? 'btn-secondary' : isThisItemReady ? 'btn-success seen-pulse' : 'btn-outline-secondary'
-              }`}>
-              <IconifyIcon icon="solar:eye-bold" />
-              {item.status === 'seen' ? 'Seen ✓' : 'Seen'}
-            </button>
+            {/* Seen btn — visible only when ready and not yet seen, hides after click */}
+            {item.status === 'ready' && !isSeen && (
+              <button type="button" onClick={() => onSeen(item)} className="btn d-flex align-items-center gap-1 btn-success seen-pulse-ready">
+                <IconifyIcon icon="solar:eye-bold" />
+                Seen
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -193,9 +175,9 @@ const MenuMaster = () => {
   // ── Audio refs & state ─────────────────────────────────────────────────────
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const audioStopped = useRef(false)
-  // Tracks which item _id triggered the ready audio — so Seen only stops
-  // audio for that specific item, not unrelated ones
-  const [readyItemId, setReadyItemId] = useState<string | null>(null)
+
+  const [readyItemIds, setReadyItemIds] = useState<string[]>([])
+  const [seenItemIds, setSeenItemIds] = useState<string[]>([])
   const [audioPlaying, setAudioPlaying] = useState(false)
   const { data: settings } = useGetSettingsQuery()
 
@@ -235,23 +217,22 @@ const MenuMaster = () => {
 
   // ── Socket listeners ───────────────────────────────────────────────────────
   useEffect(() => {
-    // menu-list-updated fires on every status change with { _id, status }
     socket.on('menu-list-updated', (data: { _id: string; status: string }) => {
       refetch()
 
-      // Only react to "ready" status
       if (data?.status === 'ready') {
         audioStopped.current = false
-        setReadyItemId(data._id)
+        setReadyItemIds((prev) => (prev.includes(data._id) ? prev : [...prev, data._id]))
+        // Clear from seenItemIds in case it was previously seen and resent
+        setSeenItemIds((prev) => prev.filter((id) => id !== data._id))
 
-        if (audioRef.current) {
+        if (audioRef.current && audioRef.current.paused) {
           audioRef.current.currentTime = 0
           audioRef.current.volume = 0.6
           audioRef.current
             .play()
             .then(() => setAudioPlaying(true))
             .catch(() => {
-              // Browser autoplay policy — retry once after 500ms
               setTimeout(() => {
                 if (!audioStopped.current) {
                   audioRef.current
@@ -270,7 +251,7 @@ const MenuMaster = () => {
     }
   }, [refetch])
 
-  // ── Stop audio (shared helper) ─────────────────────────────────────────────
+  // ── Stop audio ─────────────────────────────────────────────────────────────
   const stopAudio = () => {
     audioStopped.current = true
     if (audioRef.current) {
@@ -278,15 +259,17 @@ const MenuMaster = () => {
       audioRef.current.currentTime = 0
     }
     setAudioPlaying(false)
-    setReadyItemId(null)
+    setReadyItemIds([])
   }
 
-  // ── Seen handler — stops audio + marks item seen in DB ────────────────────
+  // ── Seen handler ──────────────────────────────────────────────────────────
   const handleSeen = async (item: IMenuMaster) => {
-    // Stop audio immediately (sync) before any async work
-    stopAudio()
-
     try {
+      await updateMenuStatus({ id: item._id, status: 'seen' }).unwrap()
+      setSeenItemIds((prev) => [...prev, item._id])
+      const remaining = readyItemIds.filter((id) => id !== item._id)
+      setReadyItemIds(remaining)
+      if (remaining.length === 0) stopAudio()
       toast.success(`👁 ${item.itemName} marked as Seen`)
     } catch {
       toast.error('Failed to update status')
@@ -318,7 +301,7 @@ const MenuMaster = () => {
     }
   }
 
-  // ── Send notification to Kitchen / Reception ───────────────────────────────
+  // ── Send notification ──────────────────────────────────────────────────────
   const handleNotification = async (item: IMenuMaster) => {
     try {
       await updateMenuStatus({ id: item._id, status: 'pending' }).unwrap()
@@ -326,6 +309,9 @@ const MenuMaster = () => {
       toast.error('Failed to reset order status')
       return
     }
+
+    // Reset seen state for this item on resend
+    setSeenItemIds((prev) => prev.filter((id) => id !== item._id))
 
     socket.emit('menu-master-notify', {
       _id: item._id,
@@ -342,21 +328,26 @@ const MenuMaster = () => {
 
   return (
     <>
-      {/* Hidden audio — same notification sound from Settings */}
+      {/* Hidden audio */}
       <audio ref={audioRef} loop>
         <source src={settings?.notificationAudio || ''} type="audio/mpeg" />
       </audio>
 
-      {/* ── Ready audio banner — visible only while audio is playing ────────── */}
-      {audioPlaying && readyItemId && (
+      {/* Ready alert banner */}
+      {audioPlaying && readyItemIds.length > 0 && (
         <div className="ready-alert-banner mb-3">
           <div className="ready-alert-left">
             <div className="ready-pulse-dot" />
             <div>
-              <p className="ready-alert-title">✅ Order is Ready!</p>
+              <p className="ready-alert-title">✅ Orders are Ready!</p>
               <p className="ready-alert-sub">
-                <strong>{menuMaster.find((m: IMenuMaster) => m._id === readyItemId)?.itemName || 'Order'}</strong> तयार आहे! खालील कार्डवर{' '}
-                <strong>Seen</strong> क्लिक करा व ऑडिओ थांबवा.
+                <strong>
+                  {readyItemIds
+                    .map((id) => menuMaster.find((m: IMenuMaster) => m._id === id)?.itemName)
+                    .filter(Boolean)
+                    .join(', ')}
+                </strong>{' '}
+                तयार आहे! सर्व कार्डवर <strong>Seen</strong> क्लिक करा व ऑडिओ थांबवा.
               </p>
             </div>
           </div>
@@ -374,7 +365,6 @@ const MenuMaster = () => {
                 </CardTitle>
               </div>
               <div className="d-flex gap-2 align-items-center">
-                {/* Search */}
                 <div className="position-relative ms-2 d-none d-md-block">
                   <input
                     type="search"
@@ -394,7 +384,14 @@ const MenuMaster = () => {
               <div className="row g-4">
                 {currentItems?.length > 0 ? (
                   currentItems.map((item: IMenuMaster) => (
-                    <MenuMasterCard key={item._id} item={item} onNotify={handleNotification} onDelete={handleDelete} onSeen={handleSeen} />
+                    <MenuMasterCard
+                      key={item._id}
+                      item={item}
+                      onNotify={handleNotification}
+                      onDelete={handleDelete}
+                      onSeen={handleSeen}
+                      isSeen={seenItemIds.includes(item._id)}
+                    />
                   ))
                 ) : (
                   <div className="col-12">
@@ -422,7 +419,6 @@ const MenuMaster = () => {
       </Row>
 
       <style>{`
-        /* ── Existing ───────────────────────────────────────────────────────── */
         @keyframes bellRing {
           0%   { transform: rotate(0deg); }
           10%  { transform: rotate(18deg); }
@@ -475,7 +471,6 @@ const MenuMaster = () => {
           letter-spacing: 0.3px;
         }
 
-        /* ── Ready card glow ────────────────────────────────────────────────── */
         @keyframes readyGlow {
           0%, 100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.45); }
           50%       { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
@@ -486,7 +481,6 @@ const MenuMaster = () => {
           border: 1.5px solid #28a745 !important;
         }
 
-        /* ── Ready ribbon on image ──────────────────────────────────────────── */
         .ready-ribbon {
           position: absolute;
           bottom: 0;
@@ -501,7 +495,6 @@ const MenuMaster = () => {
           padding: 3px 0;
         }
 
-        /* ── Seen button pulse when item is ready ───────────────────────────── */
         @keyframes seenPulse {
           0%, 100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.55); }
           50%       { box-shadow: 0 0 0 7px rgba(40, 167, 69, 0); }
@@ -511,7 +504,6 @@ const MenuMaster = () => {
           animation: seenPulse 1.2s ease-in-out infinite;
         }
 
-        /* ── Alert banner ───────────────────────────────────────────────────── */
         @keyframes slideDown {
           from { opacity: 0; transform: translateY(-10px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -560,6 +552,33 @@ const MenuMaster = () => {
           margin: 2px 0 0;
           font-size: 13px;
           color: #155724;
+        }
+
+        @keyframes seenPulseReady {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+            transform: scale(1);
+          }
+          50% {
+            box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+            transform: scale(1.06);
+          }
+        }
+
+        @keyframes seenShake {
+          0%, 100% { transform: translateX(0); }
+          20%       { transform: translateX(-4px); }
+          40%       { transform: translateX(4px); }
+          60%       { transform: translateX(-3px); }
+          80%       { transform: translateX(3px); }
+        }
+
+        .seen-pulse-ready {
+          animation: seenPulseReady 1.2s ease-in-out infinite, seenShake 2.5s ease-in-out infinite;
+          background: #28a745 !important;
+          border-color: #28a745 !important;
+          color: white !important;
+          font-weight: 700;
         }
       `}</style>
     </>

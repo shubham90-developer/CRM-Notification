@@ -1,10 +1,11 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useSelector } from 'react-redux'
 import { RootState } from '@/store'
 import NotificationCard from './NotificationCard'
 import IconifyIcon from '@/components/wrappers/IconifyIcon'
+import { useGetSettingsQuery } from '@/store/settingApi'
 
 const Notifications = () => {
   // Read active notification IDs from Redux (already populated by SocketInitializer)
@@ -12,6 +13,30 @@ const Notifications = () => {
 
   // Filter only pending/seen/prepare — not ready (ready ones are already removed by removeNotification)
   const activeNotifs = notifications.filter((n) => n.status !== 'ready')
+
+  // Single shared audio instance for all notification cards
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  const { data: settings } = useGetSettingsQuery()
+  const audioSrc = settings?.notificationAudio || ''
+
+  // ADD this
+  const activeStatuses = activeNotifs.map((n) => n.status).join(',')
+  const allAcknowledged = activeNotifs.length === 0 || activeNotifs.every((n) => n.status === 'seen' || n.status === 'prepare')
+
+  useEffect(() => {
+    if (!audioRef.current || activeNotifs.length === 0) return
+
+    if (allAcknowledged) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    } else {
+      if (audioRef.current.paused) {
+        audioRef.current.volume = 0.5
+        audioRef.current.play().catch(() => {})
+      }
+    }
+  }, [activeStatuses, activeNotifs.length])
 
   if (activeNotifs.length === 0) {
     return (
@@ -25,6 +50,11 @@ const Notifications = () => {
 
   return (
     <div className="modern-page">
+      {/* Single shared audio element for all cards */}
+      <audio ref={audioRef} loop>
+        <source src={audioSrc} type="audio/mpeg" />
+      </audio>
+
       {/* Background waves — one set for whole page */}
       <div className="wave wave1" />
       <div className="wave wave2" />
