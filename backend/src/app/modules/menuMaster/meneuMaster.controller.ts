@@ -263,15 +263,9 @@ export const updateMenuStatus = async (
 
     const updatePayload: any = { status };
 
-    // Bell click sends status "pending" — start the timer here, unless this
-    // is a fresh resend on an item that was already "ready" (reset for new cycle)
     if (status === "pending") {
-      if (existingMenu.status === "ready") {
-        updatePayload.bellStartedAt = new Date();
-        updatePayload.readyAt = null;
-      } else if (!existingMenu.bellStartedAt) {
-        updatePayload.bellStartedAt = new Date();
-      }
+      updatePayload.bellStartedAt = new Date();
+      updatePayload.readyAt = null;
     }
 
     // Order ready → stop the timer
